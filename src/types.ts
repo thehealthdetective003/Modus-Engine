@@ -1,5 +1,6 @@
 export type PhaseType = 1 | 2 | 3;
 export type ProjectFormatId = 'standard-lifecycle';
+export type T2VPromptProfile = 'omni-flash' | 'veo-flow';
 export interface Settings {
   apiKey: string;
   model: string;
@@ -177,7 +178,7 @@ export interface T2VPrompt {
   stock_keywords: string;
 }
 export interface AppState {
-  projectSchemaVersion: 3;
+  projectSchemaVersion: 4;
   id?: string;
   projectName: string;
   projectFormat: ProjectFormatId;
@@ -186,6 +187,7 @@ export interface AppState {
   sceneDirections: SceneDirection[];
   masterVoiceoverScript: string;
   voiceoverTranscription: VoiceoverTranscription | null;
+  t2vPromptProfile: T2VPromptProfile;
   visualPrompts: T2VPrompt[];
   demoState: 'idle' | 'generating' | 'review' | 'approved';
   demoScenes: T2VPrompt[];

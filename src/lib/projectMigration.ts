@@ -24,7 +24,8 @@ export function migrateProject(raw: any, initial: AppState, sceneDuration: 8 | 1
   const rawDirections = Array.isArray(raw.sceneDirections) ? raw.sceneDirections : [];
   const directionsValid = !!transcription && validateSceneDirections(rawDirections, transcription.scenes).length === 0;
   const imageMode = raw.phase4Mode === 'image-animation';
-  const compatiblePrompts: T2VPrompt[] = directionsValid && !imageMode && Array.isArray(raw.visualPrompts) && raw.visualPrompts.length === transcription.scenes.length
+  const profileSupported = raw.projectSchemaVersion >= 4 && (raw.t2vPromptProfile === 'omni-flash' || raw.t2vPromptProfile === 'veo-flow');
+  const compatiblePrompts: T2VPrompt[] = directionsValid && !imageMode && profileSupported && Array.isArray(raw.visualPrompts) && raw.visualPrompts.length === transcription.scenes.length
     ? raw.visualPrompts.filter((item: any) => item && typeof item.video_prompt === 'string').map((item: any) => ({
         number: Number(item.number), stage_id: item.stage_id || item.stage_ref, state: item.state,
         continuity_notes: item.continuity_notes, quality_flags: item.quality_flags,
@@ -46,8 +47,9 @@ export function migrateProject(raw: any, initial: AppState, sceneDuration: 8 | 1
     sceneDirections: directionsValid ? rawDirections : [],
     visualPrompts: preserveOutput ? compatiblePrompts : [],
     demoState: 'idle', demoScenes: [], demoSceneNumbers: [],
-    projectSchemaVersion: 3,
+    t2vPromptProfile: profileSupported ? raw.t2vPromptProfile : 'omni-flash',
+    projectSchemaVersion: 4,
   };
-  const reset = timingChanged || imageMode || !directionsValid || !preserveOutput;
+  const reset = timingChanged || imageMode || !profileSupported || !directionsValid || !preserveOutput;
   return { state, message: reset && raw.topic ? 'Project migrated to the timestamped T2V pipeline; incompatible downstream output was reset.' : undefined };
 }
