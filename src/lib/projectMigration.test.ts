@@ -3,7 +3,7 @@ import test from 'node:test';
 import { migrateProject, projectSceneDuration } from './projectMigration';
 import type { AppState } from '../types';
 
-const initial = { projectSchemaVersion: 4, projectName: 'Untitled', projectFormat: 'standard-lifecycle', phase: 1, topic: null, sceneDirections: [], masterVoiceoverScript: '', voiceoverTranscription: null, t2vPromptProfile:'omni-flash', visualPrompts: [], demoState: 'idle', demoScenes: [], demoSceneNumbers: [] } as AppState;
+const initial = { projectSchemaVersion: 5, projectName: 'Untitled', projectFormat: 'standard-lifecycle', phase: 1, topic: null, sceneDirections: [], masterVoiceoverScript: '', voiceoverTranscription: null, t2vPromptProfile:'omni-flash', visualPrompts: [], demoState: 'idle', demoScenes: [], demoSceneNumbers: [] } as AppState;
 
 test('rejects Hybrid projects', () => assert.equal(migrateProject({ creationMode: 'hybrid-split' }, initial, 10).state, null));
 test('moves legacy projects without typed directions to Phase 2', () => {
@@ -21,7 +21,18 @@ test('round-trips a complete 8-second T2V project without changing its timeline'
   assert.equal(result.state?.phase, 3);
   assert.equal(result.state?.voiceoverTranscription?.sceneDurationSeconds, 8);
   assert.equal(result.state?.visualPrompts.length, 1);
+  assert.equal(result.state?.projectSchemaVersion, 5);
+  assert.ok(result.state?.visualPrompts[0].omniSections);
+  assert.ok(result.state?.visualPrompts[0].diagnostics);
   assert.equal('apiKey' in parsed, false);
+
+  const partial = JSON.parse(JSON.stringify(raw));
+  partial.voiceoverTranscription.duration=16;
+  partial.voiceoverTranscription.scenes.push({number:2,start:8,end:16,duration:8,text:'Next',silent:false});
+  partial.sceneDirections.push({...scene,number:2,start:8,end:16,voiceover:'Next'});
+  const partialResult=migrateProject(partial,initial,8);
+  assert.equal(partialResult.state?.sceneDirections.length,2);
+  assert.equal(partialResult.state?.visualPrompts.length,1);
 });
 
 test('clears legacy Phase 3 prompts while preserving valid directions', () => {

@@ -7,8 +7,8 @@ const defaultSettings: Settings = {
   model: 'gemini-3.1-pro-preview',
   defaultDuration: '3',
   defaultStyle: 'Educational',
-  batchSize: 10,
   sceneDurationSeconds: 10,
+  omniSimilarityThreshold: 0.78,
   productionTemplate: DEFAULT_PRODUCTION_TEMPLATE,
   productionTemplateName: 'Modus Assembly Visual Production Handoff',
 };

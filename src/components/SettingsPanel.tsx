@@ -121,11 +121,11 @@ export function SettingsPanel({ state, setState, open, onOpenChange }: SettingsP
             <div className="border-b border-border/10 pb-2">
               <span className="text-[10px] text-muted-foreground tracking-widest uppercase font-bold flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5" />
-                02 / TIMELINE & BATCH CALIBRATION
+                02 / TIMELINE CALIBRATION
               </span>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">
                   BASE SCENE DURATION
@@ -138,27 +138,11 @@ export function SettingsPanel({ state, setState, open, onOpenChange }: SettingsP
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <Label className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">
-                  BATCH SIZE
-                </Label>
-                <Input 
-                  type="number" 
-                  min={1} 
-                  max={50}
-                  value={settings.batchSize}
-                  onChange={(e) => {
-                    const num = Math.max(1, Math.min(50, parseInt(e.target.value) || 1));
-                    setSettings(prev => ({ ...prev, batchSize: num }));
-                  }}
-                  className="bg-muted/20 border-border/40 font-mono text-xs text-foreground h-9"
-                />
-              </div>
             </div>
 
             <div className="p-3.5 bg-muted/20 border border-border/40 rounded-lg">
               <p className="text-[10px] text-muted-foreground leading-relaxed uppercase">
-                Base clips follow the global {settings.sceneDurationSeconds}-second timing. Adjust batch size to control the number of scenes generated per prompt cycle.
+                Base clips follow the global {settings.sceneDurationSeconds}-second timing. Full Phase 3 generation runs automatically in fixed sequential batches of 30 scenes.
               </p>
             </div>
           </div>
@@ -177,8 +161,12 @@ export function SettingsPanel({ state, setState, open, onOpenChange }: SettingsP
                   <SelectContent><SelectItem value="8">8 seconds</SelectItem><SelectItem value="10">10 seconds</SelectItem></SelectContent>
                 </Select>
               </div>
+              <div className="space-y-1.5">
+                <Label className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">OMNI SCENE SIMILARITY THRESHOLD</Label>
+                <Input type="number" min="0.5" max="0.95" step="0.01" value={settings.omniSimilarityThreshold} onChange={event=>setSettings(previous=>({...previous,omniSimilarityThreshold:Math.min(.95,Math.max(.5,Number(event.target.value)||.78))}))} className="bg-muted/20 border-border/40 h-9 font-mono text-xs" />
+              </div>
             </div>
-            <p className="text-[10px] text-muted-foreground leading-relaxed normal-case">Import word-timestamp transcription JSON in Phase 2. Changing scene duration re-splits existing timestamps and clears generated downstream output.</p>
+            <p className="text-[10px] text-muted-foreground leading-relaxed normal-case">Import word-timestamp transcription JSON in Phase 2. Changing scene duration re-splits existing timestamps and clears generated downstream output. Omni Flash flags structured scene similarity at the configured 0–1 threshold.</p>
           </div>
 
           <div className="space-y-4">

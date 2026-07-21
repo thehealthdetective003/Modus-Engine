@@ -1,6 +1,7 @@
 import { AppState, T2VPrompt } from '../types';
 import { resplitTranscription } from './timedTranscript';
 import { validateSceneDirections } from './sceneDirections';
+import { defaultLocks, diagnosticsFor, normalizeOmniSections, validateOmniPrompt } from './omniPromptCompiler';
 
 export type MigrationResult = { state: AppState | null; message?: string; error?: string };
 
@@ -25,15 +26,29 @@ export function migrateProject(raw: any, initial: AppState, sceneDuration: 8 | 1
   const directionsValid = !!transcription && validateSceneDirections(rawDirections, transcription.scenes).length === 0;
   const imageMode = raw.phase4Mode === 'image-animation';
   const profileSupported = raw.projectSchemaVersion >= 4 && (raw.t2vPromptProfile === 'omni-flash' || raw.t2vPromptProfile === 'veo-flow');
-  const compatiblePrompts: T2VPrompt[] = directionsValid && !imageMode && profileSupported && Array.isArray(raw.visualPrompts) && raw.visualPrompts.length === transcription.scenes.length
-    ? raw.visualPrompts.filter((item: any) => item && typeof item.video_prompt === 'string').map((item: any) => ({
-        number: Number(item.number), stage_id: item.stage_id || item.stage_ref, state: item.state,
+  const rawPrompts = Array.isArray(raw.visualPrompts) ? raw.visualPrompts : [];
+  const promptNumbers = new Set<number>();
+  const promptsCompatible = directionsValid && rawPrompts.every((item:any) => {
+    const number = Number(item?.number);
+    const valid = Number.isInteger(number) && number >= 1 && number <= transcription.scenes.length && !promptNumbers.has(number) && typeof item?.video_prompt === 'string' && item.video_prompt.trim();
+    if (valid) promptNumbers.add(number);
+    return Boolean(valid);
+  });
+  const compatiblePrompts: T2VPrompt[] = directionsValid && !imageMode && profileSupported && promptsCompatible
+    ? rawPrompts.map((item: any) => {
+        const number=Number(item.number);const direction=rawDirections.find((entry:any)=>Number(entry.number)===number);
+        const base:T2VPrompt={
+        number, stage_id: item.stage_id || item.stage_ref, state: item.state,
         continuity_notes: item.continuity_notes, quality_flags: item.quality_flags,
         action_description: String(item.action_description || ''), video_prompt: String(item.video_prompt || ''),
-        voiceover: transcription.scenes[Number(item.number) - 1]?.text || '', stock_keywords: String(item.stock_keywords || ''),
-      }))
+        voiceover: transcription.scenes[number - 1]?.text || '', stock_keywords: String(item.stock_keywords || ''),
+        omniSections:item.omniSections,diagnostics:item.diagnostics,validationIssues:item.validationIssues,acceptedWarningCodes:Array.isArray(item.acceptedWarningCodes)?item.acceptedWarningCodes:[],locks:item.locks||defaultLocks(),revisions:Array.isArray(item.revisions)?item.revisions:[],
+      };
+      if(raw.t2vPromptProfile==='omni-flash'&&direction){const sections=base.omniSections||normalizeOmniSections({},direction,raw.topic).sections;const diagnostics=diagnosticsFor(direction,raw.topic,rawDirections);base.omniSections=sections;base.diagnostics=diagnostics;base.validationIssues=validateOmniPrompt(base.video_prompt,sections,direction,raw.topic,diagnostics,.78);}
+      return base;
+    })
     : [];
-  const preserveOutput = compatiblePrompts.length === transcription?.scenes.length;
+  const preserveOutput = compatiblePrompts.length > 0;
   const phase = directionsValid ? (Number(raw.phase) >= 3 ? 3 : Math.max(1, Number(raw.phase) || 1)) : (raw.topic ? 2 : 1);
   const state: AppState = {
     ...initial,
@@ -45,10 +60,10 @@ export function migrateProject(raw: any, initial: AppState, sceneDuration: 8 | 1
     masterVoiceoverScript: transcription?.text || '',
     voiceoverTranscription: transcription,
     sceneDirections: directionsValid ? rawDirections : [],
-    visualPrompts: preserveOutput ? compatiblePrompts : [],
+    visualPrompts: preserveOutput ? compatiblePrompts.sort((a,b)=>a.number-b.number) : [],
     demoState: 'idle', demoScenes: [], demoSceneNumbers: [],
     t2vPromptProfile: profileSupported ? raw.t2vPromptProfile : 'omni-flash',
-    projectSchemaVersion: 4,
+    projectSchemaVersion: 5,
   };
   const reset = timingChanged || imageMode || !profileSupported || !directionsValid || !preserveOutput;
   return { state, message: reset && raw.topic ? 'Project migrated to the timestamped T2V pipeline; incompatible downstream output was reset.' : undefined };

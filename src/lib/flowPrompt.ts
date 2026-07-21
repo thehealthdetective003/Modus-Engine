@@ -78,6 +78,7 @@ export function buildFlowContext(topic: TopicBrief | null, directions: SceneDire
     canonical_finished_identity: compactIdentity(topic),
     cinematography_rules: topic?.cinematography_rules,
     continuity_rules: topic?.scene_continuity_rules,
+    ...(profile === 'omni-flash' ? { authoritative_production_handoff: (topic as any)?._production_handoff || null } : {}),
     scenes: directions.map(direction => ({ ...direction, relevant_forbidden_elements: relevantNegatives(direction, topic) })),
   };
 }

@@ -6,11 +6,60 @@ export interface Settings {
   model: string;
   defaultDuration: string;
   defaultStyle: string;
-  batchSize: number;
   sceneDurationSeconds: 8 | 10;
+  omniSimilarityThreshold: number;
   productionTemplate?: Record<string, any>;
   productionTemplateName?: string;
   productionTemplateImportedAt?: string;
+}
+export type PromptIssueSeverity = 'error' | 'warning' | 'info';
+export interface PromptValidationIssue {
+  code: string;
+  severity: PromptIssueSeverity;
+  message: string;
+  field?: keyof OmniPromptSections | 'prompt' | 'continuity' | 'similarity';
+}
+export interface OmniPromptSections {
+  cinematography: string;
+  subject: string;
+  action: string;
+  environment: string;
+  style_lighting: string;
+  product_state: string;
+  sound: string;
+  exclusions: string;
+}
+export interface PromptFieldLocks {
+  identity: boolean;
+  assemblyState: boolean;
+  camera: boolean;
+  prompt: boolean;
+  sections: Partial<Record<keyof OmniPromptSections, boolean>>;
+}
+export interface PromptRevision {
+  createdAt: string;
+  reason: 'generated' | 'manual-edit' | 'scene-regeneration' | 'section-regeneration' | 'clarity-rewrite';
+  video_prompt: string;
+  sections?: OmniPromptSections;
+}
+export interface PromptDiagnostics {
+  lifecycleStage: string;
+  productState: string;
+  environment: string;
+  shotScale: string;
+  lens: string;
+  viewpoint: string;
+  cameraBehavior: string;
+  primaryAction: string;
+  supportingAction: string;
+  componentsPresent: string[];
+  componentsAbsent: string[];
+  geometryAnchors: string[];
+  referenceAssets: string[];
+  exclusions: string[];
+  evidenceConfidence: string;
+  similarityScore: number;
+  similarSceneNumber?: number;
 }
 export interface TopicBrief {
   schema_version?: string;
@@ -176,9 +225,15 @@ export interface T2VPrompt {
   video_prompt: string;
   voiceover: string;
   stock_keywords: string;
+  omniSections?: OmniPromptSections;
+  diagnostics?: PromptDiagnostics;
+  validationIssues?: PromptValidationIssue[];
+  acceptedWarningCodes?: string[];
+  locks?: PromptFieldLocks;
+  revisions?: PromptRevision[];
 }
 export interface AppState {
-  projectSchemaVersion: 4;
+  projectSchemaVersion: 5;
   id?: string;
   projectName: string;
   projectFormat: ProjectFormatId;
