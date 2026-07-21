@@ -64,7 +64,7 @@ export function Phase4Visuals({ state, setState }: Props) {
 
   return <div className="space-y-6">
     <Button variant="link" className="p-0 text-muted-foreground" onClick={()=>setState(s=>({...s,phase:2}))}><ArrowLeft className="h-3 w-3 mr-1"/>Review Directions</Button>
-    <div><h2 className="text-xl font-bold tracking-wider">PHASE 3 — T2V PROMPTS</h2><p className="text-xs text-muted-foreground">Direct timestamped video prompts with exact Whisper VO attached locally.</p></div>
+    <div><h2 className="text-xl font-bold tracking-wider">PHASE 3 — T2V PROMPTS</h2><p className="text-xs text-muted-foreground">Direct timestamped video prompts with the exact imported VO attached locally.</p></div>
     {!state.visualPrompts.length && <div className="grid md:grid-cols-2 gap-3"><Button variant="outline" className="h-12" disabled={!!loading} onClick={()=>generate(true)}>{loading==='demo'?<Loader2 className="animate-spin mr-2"/>:<Play className="h-4 w-4 mr-2"/>}GENERATE 3-SCENE DEMO</Button><Button className="h-12 font-bold" disabled={!!loading} onClick={()=>generate(false)}>{loading==='full'&&<Loader2 className="animate-spin mr-2"/>}GENERATE ALL T2V PROMPTS</Button></div>}
     {state.demoScenes.length>0&&!state.visualPrompts.length&&<Button className="w-full" disabled={!!loading} onClick={()=>generate(false)}>DEMO APPROVED — GENERATE FULL SET</Button>}
     {shown.length>0 && <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={async()=>toast[await copyToClipboard(allText)?'success':'error']('T2V prompts copied')}><Copy className="h-4 w-4 mr-2"/>COPY T2V PROMPTS</Button>{state.visualPrompts.length>0&&<><Button variant="outline" onClick={exportCsv}><Download className="h-4 w-4 mr-2"/>CSV</Button><Button variant="outline" onClick={exportVo}><Download className="h-4 w-4 mr-2"/>TIMESTAMPED VO</Button></>}</div>}
@@ -72,7 +72,7 @@ export function Phase4Visuals({ state, setState }: Props) {
       <div className="flex flex-wrap gap-2"><Badge>SCENE {prompt.number}</Badge><Badge variant="outline">{formatTimestamp(d?.start||0)}–{formatTimestamp(d?.end||0)}</Badge><Badge variant="outline">{prompt.stage_id}</Badge><Badge variant="secondary">STATE {prompt.state}</Badge></div>
       <label className="text-[10px] text-muted-foreground">ACTION</label><Textarea value={prompt.action_description} onChange={e=>update(prompt.number,'action_description',e.target.value)} className="min-h-[65px]"/>
       <label className="text-[10px] text-primary font-bold">T2V PROMPT</label><Textarea value={prompt.video_prompt} onChange={e=>update(prompt.number,'video_prompt',e.target.value)} className="min-h-[180px]"/>
-      <div className="bg-muted/40 p-3 rounded text-xs"><div className="text-[10px] text-muted-foreground mb-1">EXACT WHISPER VO {d?.silent?'· SILENT WINDOW':''}</div>{prompt.voiceover||'[SILENT]'}</div>
+      <div className="bg-muted/40 p-3 rounded text-xs"><div className="text-[10px] text-muted-foreground mb-1">EXACT IMPORTED VO {d?.silent?'· SILENT WINDOW':''}</div>{prompt.voiceover||'[SILENT]'}</div>
       <label className="text-[10px] text-muted-foreground">STOCK KEYWORDS</label><Textarea value={prompt.stock_keywords} onChange={e=>update(prompt.number,'stock_keywords',e.target.value)} className="min-h-[52px]"/>
     </div>})}</div>
   </div>;

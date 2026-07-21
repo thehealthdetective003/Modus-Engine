@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { useSettings } from './SettingsContext';
 import { copyToClipboard } from '@/lib/utils';
-import { VoiceoverTranscriptionPanel } from './VoiceoverTranscriptionPanel';
+import { TranscriptionImportPanel } from './TranscriptionImportPanel';
 import { calculateStageSummary, mergeDirectionMetadata, validateSceneDirections } from '../lib/sceneDirections';
 import { formatTimestamp } from '../lib/timedTranscript';
 
@@ -39,7 +39,7 @@ export function Phase2Script({ state, setState }: Props) {
   const transcript = state.voiceoverTranscription;
 
   const generate = async () => {
-    if (!state.topic || !transcript?.scenes.length) return toast.error('Transcribe the VO before generating directions.');
+    if (!state.topic || !transcript?.scenes.length) return toast.error('Import timestamped VO JSON before generating directions.');
     const apiKey = settings.apiKey || process.env.GEMINI_API_KEY;
     if (!apiKey) return toast.error('Add a Gemini API key in Settings.');
     setIsLoading(true);
@@ -69,8 +69,8 @@ export function Phase2Script({ state, setState }: Props) {
 
   return <div className="space-y-6">
     <Button variant="link" className="p-0 text-muted-foreground" onClick={() => setState(s => ({ ...s, phase: 1 }))}><ArrowLeft className="h-3 w-3 mr-1"/>Change Topic</Button>
-    <div><h2 className="text-xl font-bold tracking-wider">PHASE 2 — VO & DIRECTION</h2><p className="text-xs text-muted-foreground">Whisper owns timing and narration. Gemini supplies camera-visible direction.</p></div>
-    <VoiceoverTranscriptionPanel state={state} setState={setState}/>
+    <div><h2 className="text-xl font-bold tracking-wider">PHASE 2 — VO & DIRECTION</h2><p className="text-xs text-muted-foreground">Imported timestamps own timing and narration. Gemini supplies camera-visible direction.</p></div>
+    <TranscriptionImportPanel state={state} setState={setState}/>
     {transcript && <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
       {[['Runtime',formatTimestamp(transcript.duration)],['Scenes',scenes.length],['Window',`${transcript.sceneDurationSeconds}s`],['Final scene',`${scenes.at(-1)?.duration.toFixed(3)}s`],['Silent windows',scenes.filter(s=>s.silent).length]].map(([k,v]) => <div key={k} className="border rounded-md p-3"><div className="text-[10px] text-muted-foreground uppercase">{k}</div><div className="font-bold mt-1">{v}</div></div>)}
     </div>}
@@ -78,7 +78,7 @@ export function Phase2Script({ state, setState }: Props) {
     <div className="space-y-2">
       <div className="flex justify-between"><Badge variant="outline">STRICT SCENE-DIRECTION JSON</Badge><Button size="sm" variant="ghost" onClick={async()=>toast[await copyToClipboard(editor)?'success':'error']('JSON copied')}><Copy className="h-3 w-3 mr-2"/>COPY</Button></div>
       <Textarea value={editor} onChange={e=>setEditor(e.target.value)} className="min-h-[520px] font-mono text-xs" spellCheck={false}/>
-      {errors.length ? <div className="border border-red-500/30 bg-red-500/5 rounded-md p-3 text-xs text-red-400">{errors.slice(0,5).map((e,i)=><div key={i}>• {e}</div>)}</div> : <div className="text-xs text-green-500 flex items-center gap-2"><CheckCircle2 className="h-4 w-4"/>Schema valid; Whisper metadata is unchanged.</div>}
+      {errors.length ? <div className="border border-red-500/30 bg-red-500/5 rounded-md p-3 text-xs text-red-400">{errors.slice(0,5).map((e,i)=><div key={i}>• {e}</div>)}</div> : <div className="text-xs text-green-500 flex items-center gap-2"><CheckCircle2 className="h-4 w-4"/>Schema valid; imported timing and VO metadata are unchanged.</div>}
       {Object.keys(stageSummary).length > 0 && <div className="flex flex-wrap gap-2">{Object.entries(stageSummary).map(([stage,count])=><Badge key={stage} variant="secondary">{stage}: {count}</Badge>)}</div>}
     </div>
     <Button onClick={approve} disabled={errors.length > 0} className="w-full h-14 font-bold tracking-widest">APPROVE DIRECTIONS → PHASE 3</Button>

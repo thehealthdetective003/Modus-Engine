@@ -9,9 +9,6 @@ const defaultSettings: Settings = {
   defaultStyle: 'Educational',
   batchSize: 10,
   sceneDurationSeconds: 10,
-  whisperModel: 'base.en',
-  whisperServiceUrl: 'http://127.0.0.1:8765',
-  whisperAccessToken: '',
   productionTemplate: DEFAULT_PRODUCTION_TEMPLATE,
   productionTemplateName: 'Modus Assembly Visual Production Handoff',
 };

@@ -93,6 +93,11 @@ export function SettingsPanel({ state, setState, open, onOpenChange }: SettingsP
                   </p>
                 </div>
               </div>
+              <div className="space-y-1.5 pt-2 border-t border-border/30">
+                <Label className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">OPTIONAL BROWSER API KEY</Label>
+                <Input type="password" autoComplete="off" value={settings.apiKey} onChange={event => setSettings(previous => ({ ...previous, apiKey: event.target.value.trim() }))} placeholder="Only needed outside managed AI Studio" className="font-mono text-xs" />
+                <p className="text-[10px] text-muted-foreground normal-case">Saved only in this browser. It is never included in project JSON exports.</p>
+              </div>
             </div>
 
             <div className="space-y-1.5 mt-2">
@@ -162,9 +167,9 @@ export function SettingsPanel({ state, setState, open, onOpenChange }: SettingsP
 
           <div className="space-y-4">
             <div className="border-b border-border/10 pb-2">
-              <span className="text-[10px] text-muted-foreground tracking-widest uppercase font-bold">03 / VO TIMING & LOCAL WHISPER</span>
+              <span className="text-[10px] text-muted-foreground tracking-widest uppercase font-bold">03 / VO TIMING</span>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">SCENE DURATION</Label>
                 <Select value={String(settings.sceneDurationSeconds)} onValueChange={(value) => setSettings(prev => ({ ...prev, sceneDurationSeconds: Number(value) as 8 | 10 }))}>
@@ -172,29 +177,8 @@ export function SettingsPanel({ state, setState, open, onOpenChange }: SettingsP
                   <SelectContent><SelectItem value="8">8 seconds</SelectItem><SelectItem value="10">10 seconds</SelectItem></SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">WHISPER MODEL</Label>
-                <Select value={settings.whisperModel} onValueChange={(value) => setSettings(prev => ({ ...prev, whisperModel: value as 'tiny.en' | 'base.en' | 'small.en' }))}>
-                  <SelectTrigger className="bg-muted/20 border-border/40 h-9 font-mono text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="tiny.en">tiny.en — fastest</SelectItem>
-                    <SelectItem value="base.en">base.en — recommended</SelectItem>
-                    <SelectItem value="small.en">small.en — accurate</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
             </div>
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">LOCAL COMPANION URL</Label>
-                <Input value={settings.whisperServiceUrl} onChange={e => setSettings(prev => ({ ...prev, whisperServiceUrl: e.target.value }))} placeholder="http://127.0.0.1:8765" className="font-mono text-xs" />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">AI STUDIO ACCESS TOKEN</Label>
-                <Input type="password" value={settings.whisperAccessToken} onChange={e => setSettings(prev => ({ ...prev, whisperAccessToken: e.target.value.trim() }))} placeholder="Paste .runtime/whisper-access-token.txt" className="font-mono text-xs" />
-              </div>
-            </div>
-            <p className="text-[10px] text-muted-foreground leading-relaxed normal-case">Runs locally on CPU using INT8. Changing scene duration re-splits existing timestamps and clears generated downstream output.</p>
+            <p className="text-[10px] text-muted-foreground leading-relaxed normal-case">Import word-timestamp transcription JSON in Phase 2. Changing scene duration re-splits existing timestamps and clears generated downstream output.</p>
           </div>
 
           <div className="space-y-4">

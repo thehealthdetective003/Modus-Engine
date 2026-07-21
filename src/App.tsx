@@ -24,10 +24,10 @@ import { ProjectLibrary } from './components/ProjectLibrary';
 import { saveProject, loadProject } from './lib/storageUtils';
 import { toast } from 'sonner';
 import { resplitTranscription, resetDownstreamForTiming } from './lib/timedTranscript';
-import { migrateProject } from './lib/projectMigration';
+import { migrateProject, projectSceneDuration } from './lib/projectMigration';
 const PHASES = [
   { id: 1, label: 'TOPIC', description: 'Select Manufacturing Subject' },
-  { id: 2, label: 'VO & DIRECTION', description: 'Transcribe and Direct Scenes' },
+  { id: 2, label: 'VO & DIRECTION', description: 'Import Timestamps and Direct Scenes' },
   { id: 3, label: 'T2V PROMPTS', description: 'Generate Timestamped Video Prompts' },
 ];
 export const INITIAL_STATE: AppState = {
@@ -48,7 +48,7 @@ export const INITIAL_STATE: AppState = {
 
 export default function App() {
   const { theme, setTheme } = useTheme();
-  const { settings, isLoaded } = useSettings();
+  const { settings, setSettings, isLoaded } = useSettings();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isStepperOpen, setIsStepperOpen] = useState(true);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
@@ -84,8 +84,11 @@ export default function App() {
     const saved = localStorage.getItem('assembly_line_save');
     if (saved) {
       try {
-        const migration = migrateProject(JSON.parse(saved), INITIAL_STATE, settings.sceneDurationSeconds);
+        const raw = JSON.parse(saved);
+        const duration = projectSceneDuration(raw, settings.sceneDurationSeconds);
+        const migration = migrateProject(raw, INITIAL_STATE, duration);
         if (migration.state) {
+          setSettings(previous => ({ ...previous, sceneDurationSeconds: duration }));
           setState(migration.state);
           setLastSavedState(JSON.stringify(migration.state));
         } else {
@@ -167,7 +170,8 @@ export default function App() {
   const executeLoad = (id: string) => {
     const loaded = loadProject(id);
     if (loaded) {
-      const migration = migrateProject(loaded, INITIAL_STATE, settings.sceneDurationSeconds);
+      const duration = projectSceneDuration(loaded, settings.sceneDurationSeconds);
+      const migration = migrateProject(loaded, INITIAL_STATE, duration);
       const merged = migration.state;
       if (!merged) {
         toast.error('This project uses an unsupported production format. Only Standard Lifecycle projects can be loaded.');
@@ -175,6 +179,7 @@ export default function App() {
         return;
       }
       setState(merged);
+      setSettings(previous => ({ ...previous, sceneDurationSeconds: duration }));
       setLastSavedState(JSON.stringify(merged));
       toast.success(`Loaded: ${merged.topic?.topic?.title || merged.projectName}`);
       if (migration.message) toast.info(migration.message);
@@ -317,13 +322,15 @@ export default function App() {
                       // Validation: check for the core fields of AppState
                       if (importedData && typeof importedData === 'object' && 'phase' in importedData) {
                         if (typeof importedData.phase === 'number' && 'projectName' in importedData) {
-                          const migration = migrateProject(importedData, INITIAL_STATE, settings.sceneDurationSeconds);
+                          const duration = projectSceneDuration(importedData, settings.sceneDurationSeconds);
+                          const migration = migrateProject(importedData, INITIAL_STATE, duration);
                           const merged = migration.state;
                           if (!merged) {
                             toast.error('Unsupported production format. Only Standard Lifecycle projects can be loaded.');
                             return;
                           }
                           setState(merged);
+                          setSettings(previous => ({ ...previous, sceneDurationSeconds: duration }));
                           setLastSavedState(JSON.stringify(merged));
                           toast.success("Project file loaded and synchronized.");
                           if (migration.message) toast.info(migration.message);

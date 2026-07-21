@@ -27,6 +27,7 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
   const standardBlankTemplate = JSON.stringify(activeProductionTemplate, null, 2);
   const [jsonInput, setJsonInput] = useState('');
   const [isHowToOpen, setIsHowToOpen] = useState(false);
+  const [showPasteEditor, setShowPasteEditor] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [isValid, setIsValid] = useState(false);
@@ -74,6 +75,15 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
     } else {
       toast.error('Copy failed. Please copy manually.');
     }
+  };
+  const handleImportBrief = async (file: File) => {
+    try {
+      const parsed = JSON.parse(await file.text());
+      setJsonInput(JSON.stringify(parsed, null, 2));
+      setShowPasteEditor(true);
+      setIsValid(false); setParsedBrief(null); setError(null); setWarnings([]);
+      toast.success('Production JSON imported. Validate it to continue.');
+    } catch { setError('Invalid JSON file. Check its syntax and try again.'); }
   };
   const handleValidate = () => {
     setError(null);
@@ -138,7 +148,7 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
         <CollapsibleContent className="p-4 pt-0 space-y-4">
           <p className="text-sm text-muted-foreground leading-relaxed">
             Prepare your topic brief externally using an LLM (ChatGPT, Gemini, etc.), 
-            then paste the completed JSON here. The app will read it and pre-fill all 
+            then import the completed JSON here. The app will read it and pre-fill all 
             phases automatically.
           </p>
           <div className="flex flex-wrap gap-3">
@@ -165,11 +175,18 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
       </Collapsible>
       {/* 2. MIDDLE SECTION - JSON Paste */}
       <div className="space-y-4">
+        <div className="grid sm:grid-cols-[1fr_auto] gap-3">
+          <Button className="relative h-14 bg-amber-500 hover:bg-amber-600 text-amber-950 font-bold tracking-widest">
+            <FileJson className="h-5 w-5 mr-2"/>IMPORT PRODUCTION JSON
+            <input type="file" accept=".json,application/json" className="absolute inset-0 opacity-0 cursor-pointer" onChange={event=>{const file=event.target.files?.[0]; if(file) handleImportBrief(file); event.currentTarget.value='';}}/>
+          </Button>
+          <Button variant="outline" className="h-14" onClick={()=>setShowPasteEditor(value=>!value)}>{showPasteEditor?'HIDE JSON EDITOR':'PASTE JSON (OPTIONAL)'}</Button>
+        </div>
         <div className="space-y-2 block">
           {/* Left Column: Existing JSON Blueprint Box */}
           <div className="space-y-2 block">
-            <label className="text-xs font-mono font-bold tracking-wider text-amber-500/80 uppercase">
-              PROJECT JSON BLUEPRINT [RAW DATA]
+            {showPasteEditor && <><label className="text-xs font-mono font-bold tracking-wider text-amber-500/80 uppercase">
+              PROJECT JSON BLUEPRINT [IMPORT REVIEW / OPTIONAL PASTE]
             </label>
             <div className="relative block">
               <Textarea
@@ -187,7 +204,7 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
               <div className="absolute top-3 right-3 text-amber-500/20 pointer-events-none">
                 <FileJson className="h-8 w-8" />
               </div>
-            </div>
+            </div></>}
           </div>
         </div>
         {error && (

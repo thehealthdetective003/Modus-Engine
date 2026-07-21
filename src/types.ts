@@ -7,9 +7,6 @@ export interface Settings {
   defaultStyle: string;
   batchSize: number;
   sceneDurationSeconds: 8 | 10;
-  whisperModel: 'tiny.en' | 'base.en' | 'small.en';
-  whisperServiceUrl: string;
-  whisperAccessToken: string;
   productionTemplate?: Record<string, any>;
   productionTemplateName?: string;
   productionTemplateImportedAt?: string;
@@ -137,14 +134,14 @@ export interface VoiceoverTranscription {
   duration: number;
   language: 'en';
   languageProbability: number;
-  model: 'tiny.en' | 'base.en' | 'small.en';
-  computeType: 'int8';
+  model: string;
+  computeType: string;
   text: string;
   segments: TimedTranscriptSegment[];
   words: TimedWord[];
   sceneDurationSeconds: 8 | 10;
   scenes: TimedScene[];
-  transcribedAt: string;
+  importedAt: string;
 }
 export interface SceneDirection {
   number: number;
