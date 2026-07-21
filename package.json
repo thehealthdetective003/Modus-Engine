@@ -6,14 +6,14 @@
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0 --force",
     "setup:whisper": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-whisper.ps1",
-    "whisper:service": ".runtime\\python\\python.exe whisper-service\\service.py",
+    "whisper:service": ".runtime\\python\\Scripts\\python.exe whisper-service\\service.py",
     "dev:local": "node scripts/start-local.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
     ,"test:timing": "tsx --test src/lib/timedTranscript.test.ts src/lib/sceneDirections.test.ts src/lib/projectMigration.test.ts"
-    ,"test:whisper-service": ".runtime\\python\\python.exe -m unittest discover whisper-service -p test_*.py"
+    ,"test:whisper-service": ".runtime\\python\\Scripts\\python.exe -m unittest discover whisper-service -p test_*.py"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
