@@ -1,0 +1,274 @@
+import React, { useState } from 'react';
+import { 
+  Wrench, 
+  Sliders, 
+  Clock, 
+  X,
+  Brain,
+  Lock,
+  FileUp,
+  RotateCcw,
+  CheckCircle2,
+} from 'lucide-react';
+import { toast } from 'sonner';
+
+import { useSettings } from './SettingsContext';
+import { AppState } from '../types';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from '@/components/ui/sheet';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { DEFAULT_PRODUCTION_TEMPLATE, validateProductionTemplate } from '../lib/productionTemplate';
+
+interface SettingsPanelProps {
+  state: AppState;
+  setState: React.Dispatch<React.SetStateAction<AppState>>;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+export function SettingsPanel({ state, setState, open, onOpenChange }: SettingsPanelProps) {
+  const { settings, setSettings } = useSettings();
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent id="toolbox-sidebar" className="bg-background border-l border-border/40 w-[420px] max-w-full p-0 flex flex-col font-mono text-foreground" showCloseButton={false}>
+        
+        {/* Header */}
+        <SheetHeader className="p-6 border-b border-border/20 bg-muted/10">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <SheetTitle className="text-sm font-bold tracking-[0.2em] text-foreground flex items-center gap-2">
+                <Wrench className="w-4 h-4 text-foreground" />
+                ASSEMBLY LINE TOOLBOX
+              </SheetTitle>
+              <SheetDescription className="text-[10px] text-muted-foreground/80 tracking-wide uppercase">
+                Global Production Controls & System Utilities
+              </SheetDescription>
+            </div>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={() => onOpenChange(false)} 
+              className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/40 rounded-full"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        </SheetHeader>
+
+        {/* Content Area */}
+        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-8 select-none">
+
+          {/* Section: Gemini API Configuration */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between border-b border-border/10 pb-2">
+              <span className="text-[10px] text-muted-foreground tracking-widest uppercase font-bold flex items-center gap-1.5">
+                <Brain className="w-3.5 h-3.5" />
+                01 / GEMINI API CONFIG
+              </span>
+            </div>
+
+            <div className="space-y-3 bg-muted/30 border border-border/50 p-4 rounded-lg">
+              <div className="flex items-start gap-2.5">
+                <Lock className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <span className="text-[10px] text-foreground font-bold uppercase tracking-wider block">Managed API Key</span>
+                  <p className="text-[10px] text-muted-foreground leading-normal uppercase">
+                    API Key is managed securely by your Google AI Studio environment.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-1.5 mt-2">
+              <Label className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">
+                DEFAULT MODEL PIPELINE
+              </Label>
+              <Select value={settings.model} onValueChange={(val) => setSettings(s => ({...s, model: val}))}>
+                <SelectTrigger className="bg-muted/20 border border-border/40 h-9 font-mono text-xs focus:ring-primary/40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-background border-border/40 font-mono text-xs">
+                  <SelectItem value="gemini-3.5-flash">Gemini 3.5 Flash (Balanced speed)</SelectItem>
+                  <SelectItem value="gemini-2.5-pro">Gemini 2.5 Pro (Deep reasoning)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Section: Timeline Calibration */}
+          <div className="space-y-4">
+            <div className="border-b border-border/10 pb-2">
+              <span className="text-[10px] text-muted-foreground tracking-widest uppercase font-bold flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5" />
+                02 / TIMELINE & BATCH CALIBRATION
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">
+                  BASE SCENE DURATION
+                </Label>
+                <Input 
+                  type="text" 
+                  readOnly 
+                  value={`${settings.sceneDurationSeconds}.0 SECS`}
+                  className="bg-muted/20 border-border/40 font-mono text-xs text-foreground select-none cursor-default h-9"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">
+                  BATCH SIZE
+                </Label>
+                <Input 
+                  type="number" 
+                  min={1} 
+                  max={50}
+                  value={settings.batchSize}
+                  onChange={(e) => {
+                    const num = Math.max(1, Math.min(50, parseInt(e.target.value) || 1));
+                    setSettings(prev => ({ ...prev, batchSize: num }));
+                  }}
+                  className="bg-muted/20 border-border/40 font-mono text-xs text-foreground h-9"
+                />
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-muted/20 border border-border/40 rounded-lg">
+              <p className="text-[10px] text-muted-foreground leading-relaxed uppercase">
+                Base clips follow the global {settings.sceneDurationSeconds}-second timing. Adjust batch size to control the number of scenes generated per prompt cycle.
+              </p>
+            </div>
+          </div>
+
+          {/* Section: Global Negative Prompts Defaults Removed */}
+
+          <div className="space-y-4">
+            <div className="border-b border-border/10 pb-2">
+              <span className="text-[10px] text-muted-foreground tracking-widest uppercase font-bold">03 / VO TIMING & LOCAL WHISPER</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">SCENE DURATION</Label>
+                <Select value={String(settings.sceneDurationSeconds)} onValueChange={(value) => setSettings(prev => ({ ...prev, sceneDurationSeconds: Number(value) as 8 | 10 }))}>
+                  <SelectTrigger className="bg-muted/20 border-border/40 h-9 font-mono text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="8">8 seconds</SelectItem><SelectItem value="10">10 seconds</SelectItem></SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">WHISPER MODEL</Label>
+                <Select value={settings.whisperModel} onValueChange={(value) => setSettings(prev => ({ ...prev, whisperModel: value as 'tiny.en' | 'base.en' | 'small.en' }))}>
+                  <SelectTrigger className="bg-muted/20 border-border/40 h-9 font-mono text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="tiny.en">tiny.en — fastest</SelectItem>
+                    <SelectItem value="base.en">base.en — recommended</SelectItem>
+                    <SelectItem value="small.en">small.en — accurate</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <p className="text-[10px] text-muted-foreground leading-relaxed normal-case">Runs locally on CPU using INT8. Changing scene duration re-splits existing timestamps and clears generated downstream output.</p>
+          </div>
+
+          <div className="space-y-4">
+            <div className="border-b border-border/10 pb-2">
+              <span className="text-[10px] text-muted-foreground tracking-widest uppercase font-bold flex items-center gap-1.5">
+                <FileUp className="w-3.5 h-3.5" />
+                04 / PRODUCTION JSON TEMPLATE
+              </span>
+            </div>
+            <div className="space-y-3 bg-muted/20 border border-border/40 p-4 rounded-lg">
+              <div className="flex items-start gap-2">
+                <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider">{settings.productionTemplateName || 'Bundled template'}</p>
+                  <p className="text-[10px] text-muted-foreground mt-1 normal-case">
+                    {settings.productionTemplateImportedAt
+                      ? `Imported ${new Date(settings.productionTemplateImportedAt).toLocaleString()}`
+                      : 'Bundled Modus Assembly Visual Production Handoff v1.0.0'}
+                  </p>
+                </div>
+              </div>
+              <p className="text-[10px] text-muted-foreground leading-relaxed normal-case">
+                Importing replaces the blank Standard Lifecycle template and its generated research prompt. Filled handoff files are converted into the app's stage, environment, geometry-lock, continuity, and negative-prompt fields when loaded in Phase 1.
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <Button variant="outline" size="sm" className="relative h-9 text-[10px] font-mono">
+                  <FileUp className="h-3.5 w-3.5 mr-2" /> IMPORT JSON
+                  <input
+                    type="file"
+                    accept=".json,application/json"
+                    className="absolute inset-0 opacity-0 cursor-pointer"
+                    onChange={(event) => {
+                      const input = event.currentTarget;
+                      const file = input.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = () => {
+                        try {
+                          const parsed = JSON.parse(String(reader.result));
+                          const errors = validateProductionTemplate(parsed);
+                          if (errors.length) {
+                            toast.error(`Template not activated: ${errors.join(' ')}`);
+                            return;
+                          }
+                          setSettings(prev => ({
+                            ...prev,
+                            productionTemplate: parsed,
+                            productionTemplateName: parsed.schema?.name || file.name,
+                            productionTemplateImportedAt: new Date().toISOString(),
+                          }));
+                          toast.success('Production template imported and activated.');
+                        } catch {
+                          toast.error('The selected file is not valid JSON.');
+                        } finally {
+                          input.value = '';
+                        }
+                      };
+                      reader.readAsText(file);
+                    }}
+                  />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 text-[10px] font-mono"
+                  onClick={() => {
+                    setSettings(prev => ({ ...prev, productionTemplate: DEFAULT_PRODUCTION_TEMPLATE, productionTemplateName: 'Modus Assembly Visual Production Handoff', productionTemplateImportedAt: undefined }));
+                    toast.success('Bundled production template restored.');
+                  }}
+                >
+                  <RotateCcw className="h-3.5 w-3.5 mr-2" /> RESTORE
+                </Button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        {/* Footer */}
+        <div className="p-6 border-t border-border/20 text-center bg-muted/10 mt-auto">
+          <h4 className="text-xs font-bold text-foreground tracking-[0.25em]">ASSEMBLY LINE</h4>
+          <div className="text-[9px] text-muted-foreground mt-1 uppercase tracking-widest">Version 2.2.0 // MINIMAL BUILD</div>
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
