@@ -7,6 +7,7 @@ import tempfile
 import threading
 import time
 import uuid
+import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
@@ -17,7 +18,10 @@ ROOT = Path(__file__).resolve().parents[1]
 MODEL_CACHE = ROOT / ".runtime" / "whisper-models"
 ALLOWED_MODELS = {"tiny.en", "base.en", "small.en"}
 ALLOWED_SUFFIXES = {".wav", ".mp3", ".m4a", ".flac", ".ogg", ".mp4"}
-ALLOWED_ORIGINS = {"http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:4173", "http://127.0.0.1:4173"}
+LOCAL_ORIGINS = {"http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:4173", "http://127.0.0.1:4173"}
+REMOTE_ORIGIN = re.compile(r"^https://(?:aistudio\.google\.com|[a-z0-9-]+\.(?:googleusercontent\.com|usercontent\.goog))$")
+EXTRA_ORIGINS = {value.strip() for value in os.environ.get("WHISPER_ALLOWED_ORIGINS", "").split(",") if value.strip()}
+TOKEN_FILE = ROOT / ".runtime" / "whisper-access-token.txt"
 MAX_UPLOAD_BYTES = 1024 * 1024 * 1024
 
 jobs: dict[str, dict] = {}
@@ -96,7 +100,22 @@ class Handler(BaseHTTPRequestHandler):
 
     def _origin(self):
         origin = self.headers.get("Origin")
-        return origin if origin in ALLOWED_ORIGINS else None
+        return origin if origin in LOCAL_ORIGINS or origin in EXTRA_ORIGINS or (origin and REMOTE_ORIGIN.match(origin)) else None
+
+    def _authorized(self):
+        origin = self.headers.get("Origin")
+        if origin in LOCAL_ORIGINS or not origin:
+            return True
+        if not self._origin() or not TOKEN_FILE.exists():
+            return False
+        supplied = self.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+        return supplied == TOKEN_FILE.read_text(encoding="utf-8").strip()
+
+    def _require_authorized(self):
+        if self._authorized():
+            return True
+        self._json(401, {"error": "Local companion access token is missing or invalid"})
+        return False
 
     def _json(self, status: int, payload: dict) -> None:
         data = json.dumps(payload).encode("utf-8")
@@ -104,6 +123,7 @@ class Handler(BaseHTTPRequestHandler):
         if self._origin():
             self.send_header("Access-Control-Allow-Origin", self._origin())
             self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Private-Network", "true")
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
@@ -114,10 +134,12 @@ class Handler(BaseHTTPRequestHandler):
         if self._origin():
             self.send_header("Access-Control-Allow-Origin", self._origin())
             self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+            self.send_header("Access-Control-Allow-Private-Network", "true")
         self.end_headers()
 
     def do_GET(self) -> None:
+        if not self._require_authorized(): return
         path = urlparse(self.path).path
         if path == "/health":
             self._json(200, {"status": "ok", "service": "faster-whisper", "device": "cpu", "computeType": "int8", "models": sorted(ALLOWED_MODELS), "loadedModels": sorted(models)})
@@ -128,6 +150,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json(404, {"error": "Not found"})
 
     def do_POST(self) -> None:
+        if not self._require_authorized(): return
         if urlparse(self.path).path != "/transcriptions":
             self._json(404, {"error": "Not found"})
             return
@@ -156,6 +179,7 @@ class Handler(BaseHTTPRequestHandler):
         self._json(202, {"id": job_id, "status": "queued"})
 
     def do_DELETE(self) -> None:
+        if not self._require_authorized(): return
         path = urlparse(self.path).path
         job = jobs.get(path.rsplit("/", 1)[-1]) if path.startswith("/transcriptions/") else None
         if not job:
@@ -166,5 +190,6 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    print(f"Assembly Line Whisper service listening on http://{HOST}:{PORT}")
+    print(f"Assembly Line Whisper companion listening on http://{HOST}:{PORT}")
+    print(f"Google AI Studio token file: {TOKEN_FILE}")
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()

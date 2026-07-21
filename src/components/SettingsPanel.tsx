@@ -184,6 +184,16 @@ export function SettingsPanel({ state, setState, open, onOpenChange }: SettingsP
                 </Select>
               </div>
             </div>
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">LOCAL COMPANION URL</Label>
+                <Input value={settings.whisperServiceUrl} onChange={e => setSettings(prev => ({ ...prev, whisperServiceUrl: e.target.value }))} placeholder="http://127.0.0.1:8765" className="font-mono text-xs" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">AI STUDIO ACCESS TOKEN</Label>
+                <Input type="password" value={settings.whisperAccessToken} onChange={e => setSettings(prev => ({ ...prev, whisperAccessToken: e.target.value.trim() }))} placeholder="Paste .runtime/whisper-access-token.txt" className="font-mono text-xs" />
+              </div>
+            </div>
             <p className="text-[10px] text-muted-foreground leading-relaxed normal-case">Runs locally on CPU using INT8. Changing scene duration re-splits existing timestamps and clears generated downstream output.</p>
           </div>
 

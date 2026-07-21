@@ -8,6 +8,8 @@ export interface Settings {
   batchSize: number;
   sceneDurationSeconds: 8 | 10;
   whisperModel: 'tiny.en' | 'base.en' | 'small.en';
+  whisperServiceUrl: string;
+  whisperAccessToken: string;
   productionTemplate?: Record<string, any>;
   productionTemplateName?: string;
   productionTemplateImportedAt?: string;

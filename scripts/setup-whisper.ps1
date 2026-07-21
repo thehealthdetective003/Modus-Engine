@@ -6,6 +6,7 @@ $pythonExe = Join-Path $pythonRoot 'Scripts\python.exe'
 $installedPython = Join-Path $env:LocalAppData 'Programs\Python\Python311\python.exe'
 $installer = Join-Path $env:TEMP 'python-3.11.9-amd64.exe'
 $installLog = Join-Path $runtimeRoot 'python-install.log'
+$tokenFile = Join-Path $runtimeRoot 'whisper-access-token.txt'
 
 New-Item -ItemType Directory -Force -Path $runtimeRoot | Out-Null
 if (-not (Test-Path $pythonExe)) {
@@ -25,4 +26,9 @@ if (-not (Test-Path $pythonExe)) {
 Write-Host 'Installing faster-whisper service dependencies...'
 & $pythonExe -m pip install --disable-pip-version-check --upgrade pip
 & $pythonExe -m pip install --disable-pip-version-check -r (Join-Path $projectRoot 'whisper-service\requirements.txt')
+if (-not (Test-Path $tokenFile)) {
+  $accessToken = ([guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N'))
+  Set-Content -LiteralPath $tokenFile -Value $accessToken -NoNewline
+}
+Write-Host "Google AI Studio access token: $(Get-Content -LiteralPath $tokenFile)"
 Write-Host 'Whisper setup complete. Run: npm run dev:local'

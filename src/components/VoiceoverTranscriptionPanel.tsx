@@ -21,7 +21,7 @@ export function VoiceoverTranscriptionPanel({ state, setState }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const checkHealth = async () => {
-    try { await checkWhisperHealth(); setServiceOnline(true); }
+    try { await checkWhisperHealth(settings.whisperServiceUrl, settings.whisperAccessToken); setServiceOnline(true); }
     catch { setServiceOnline(false); }
   };
   useEffect(() => { checkHealth(); }, []);
@@ -31,7 +31,7 @@ export function VoiceoverTranscriptionPanel({ state, setState }: Props) {
     let stopped = false;
     const poll = async () => {
       try {
-        const job = await getTranscriptionJob(jobId);
+        const job = await getTranscriptionJob(settings.whisperServiceUrl, settings.whisperAccessToken, jobId);
         if (stopped) return;
         setStatus(job.status);
         setProgress(job.progress || 0);
@@ -64,11 +64,11 @@ export function VoiceoverTranscriptionPanel({ state, setState }: Props) {
     const suffix = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
     if (!allowed.includes(suffix)) { toast.error('Choose WAV, MP3, M4A, FLAC, OGG, or MP4 audio.'); return; }
     try {
-      await checkWhisperHealth();
+      await checkWhisperHealth(settings.whisperServiceUrl, settings.whisperAccessToken);
       setServiceOnline(true);
       setState(prev => ({ ...resetDownstreamForTiming(prev), masterVoiceoverScript: '', voiceoverTranscription: null } as AppState));
       setStatus('uploading'); setProgress(0);
-      const job = await createTranscription(file, settings.whisperModel);
+      const job = await createTranscription(settings.whisperServiceUrl, settings.whisperAccessToken, file, settings.whisperModel);
       setJobId(job.id);
     } catch (error) {
       setServiceOnline(false);
@@ -102,7 +102,7 @@ export function VoiceoverTranscriptionPanel({ state, setState }: Props) {
       </div>
       {serviceOnline === false && (
         <div className="p-3 rounded-md border border-red-500/20 bg-red-500/5 text-xs text-red-400 flex gap-2">
-          <AlertCircle className="h-4 w-4 shrink-0" /><span>Run <code>npm run setup:whisper</code> once, then start the app with <code>npm run dev:local</code>.</span>
+          <AlertCircle className="h-4 w-4 shrink-0" /><span>Run <code>npm run setup:whisper</code> once, then keep <code>npm run whisper:service</code> running. In Google AI Studio, paste the local access token in Settings.</span>
         </div>
       )}
       <div className="flex flex-wrap gap-2">
@@ -111,7 +111,7 @@ export function VoiceoverTranscriptionPanel({ state, setState }: Props) {
           <input ref={inputRef} type="file" accept=".wav,.mp3,.m4a,.flac,.ogg,.mp4,audio/*,video/mp4" className="absolute inset-0 opacity-0 cursor-pointer" onChange={event => event.target.files?.[0] && transcribe(event.target.files[0])} />
         </Button>
         <Button variant="ghost" size="sm" onClick={checkHealth}><RefreshCw className="h-3.5 w-3.5 mr-2" />CHECK SERVICE</Button>
-        {busy && <Button variant="destructive" size="sm" onClick={async () => { if (jobId) await cancelTranscription(jobId); }}><Square className="h-3 w-3 mr-2" />CANCEL</Button>}
+        {busy && <Button variant="destructive" size="sm" onClick={async () => { if (jobId) await cancelTranscription(settings.whisperServiceUrl, settings.whisperAccessToken, jobId); }}><Square className="h-3 w-3 mr-2" />CANCEL</Button>}
       </div>
       {busy && <div className="space-y-2"><div className="flex justify-between text-xs"><span className="uppercase">{status.replace('_', ' ')}...</span><span>{progress}%</span></div><Progress value={progress} /></div>}
       {transcript && (

@@ -22,3 +22,12 @@ View your app in AI Studio: https://ai.studio/apps/04e6cef8-b58b-4b07-b579-320ae
    `npm run dev:local`
 
 The first transcription downloads the selected English Whisper model into `.runtime/whisper-models`. Audio remains local and temporary upload files are deleted after each job.
+
+### Google AI Studio + local Whisper
+
+1. Run `npm run setup:whisper` once, then run `npm run whisper:service` whenever the AI Studio app is open.
+2. Copy the token shown by setup, or run `Get-Content .runtime\whisper-access-token.txt`.
+3. In the app Settings, keep the companion URL as `http://127.0.0.1:8765` and paste the token into **AI Studio Access Token**.
+4. Approve Chrome's local-network permission if prompted. The companion accepts authenticated Google AI Studio preview origins and never uploads audio beyond the PC.
+
+If AI Studio uses a different preview origin, start the service after setting `WHISPER_ALLOWED_ORIGINS` to that exact HTTPS origin.
