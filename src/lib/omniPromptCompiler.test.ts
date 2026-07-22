@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { SceneDirection, TopicBrief } from '../types';
-import { compileOmniPrompt, normalizeOmniSections, resolveProductionScene } from './omniPromptCompiler';
+import { canonicalIdentitySignature, compileOmniPrompt, normalizeOmniSections, recompileOmniPrompts, resolveProductionScene } from './omniPromptCompiler';
 
 const direction:SceneDirection={number:1,start:0,end:10,duration:10,voiceover:'',silent:false,stage_id:'S02',state:'B',subject:'Incomplete KJ-600 airframe',product_visual_state:'Structurally joined airframe',primary_action:'A technician checks the exposed wing-fold hinge',supporting_motion:'A metrology light sweeps slowly',environment_ref:'E01',environment_description:'Bright aircraft assembly hall',camera:{shot_scale:'medium-wide',lens:'short telephoto',angle:'rear three-quarter',movement:'slow lateral dolly',movement_speed:'slow'},lighting_and_material:'Realistic industrial light on bare metal',continuity_from_previous:'Fuselage joined',transition_to_next:'Engine integration',required_visible_features:['broad horizontal stabilizer','exactly four vertical fins'],forbidden_elements:['engines','rotodome','final paint']};
 const handoff={product:{official_name:'KJ-600',exact_variant:'carrier AEW',immutable_identity_features:['compact fuselage','high-mounted wing','exactly two engine nacelles','large circular rotodome','broad horizontal stabilizer','exactly four vertical fins','tricycle landing gear']},geometry_modules:[{module_id:'AIRFRAME',required_visible_features:['broad horizontal stabilizer','exactly four vertical fins','arresting-hook region'],forbidden_geometry_changes:['changing fin count']}],environments:[{environment_id:'E01',facility_type:'assembly hall',forbidden_elements:['passenger windows']}],reference_assets:[{asset_id:'R1',confidence:'HIGH'}],production_stages:[{stage_id:'S02',environment_id:'E01',present_now:['fuselage','centre wing','tail'],not_yet_installed:['engines','rotodome','landing gear','final paint'],temporarily_exposed:['wing-fold interface'],geometry_control:{primary_geometry_module_id:'AIRFRAME',required_visible_anchors:['four-fin tail'],negative_constraints:['generic airliner geometry'],forbidden_transformations:['automatic panel closure']},stage_actions:[{forbidden_actions:['engine operation']}],camera_guidance:{},visual_evidence:{confirmed_visual_details:['joined fuselage'],analyst_inferred_visual_details:['tool placement'],reference_asset_ids:['R1']},continuity:{}}],stage_transitions:[{from_stage_id:'S02',to_stage_id:'S03',components_added:['engines']}]};
@@ -15,12 +15,80 @@ test('resolves contradictory camera metadata to one coherent instruction',()=>{
   assert.equal(resolve({movement:'static tracking pan'}).behavior,'locked camera');
   assert.equal(resolve({movement:'static dolly'}).behavior,'locked camera');
   assert.equal(resolve({lens:'wide-angle 50 mm'}).lens,'normal');
-  assert.equal(resolve({shot_scale:'wide macro'}).shotScale,'close-up');
+  assert.equal(resolve({shot_scale:'wide macro'}).shotScale,'macro close-up');
   assert.equal(resolve({movement:'slow pan then tracking'}).behavior,'locked camera');
   const guided=JSON.parse(JSON.stringify(handoff));guided.production_stages[0].camera_guidance={preferred_camera_movements:['slow lateral dolly'],forbidden_camera_movements:[]};
   assert.equal(resolve({movement:'static tracking'}, {...topic,_production_handoff:guided} as any).behavior,'slow lateral dolly');
   guided.production_stages[0].camera_guidance.forbidden_camera_movements=['dolly'];
+  assert.equal(resolve({movement:'tracking'}, {...topic,_production_handoff:guided} as any).behavior,'restrained tracking movement');
+  guided.production_stages[0].camera_guidance.forbidden_camera_movements=['tracking'];
   assert.equal(resolve({movement:'tracking'}, {...topic,_production_handoff:guided} as any).behavior,'locked camera');
+});
+
+test('preserves authoritative scene cameras when stage guidance lists multiple allowed choices',()=>{
+  const guided=JSON.parse(JSON.stringify(handoff));
+  guided.production_stages[0].camera_guidance={
+    preferred_views:['Front three-quarter','Side three-quarter','Stage-relevant detail','Wide environmental establishing view'],
+    safe_shot_scales:['EXTREME_WIDE','WIDE','MEDIUM','CLOSE_UP'],
+    preferred_camera_movements:['Static tripod','Slow dolly','Slow lateral track','Controlled push-in'],
+    forbidden_camera_movements:['Whip pan'],
+  };
+  const localTopic={...topic,_production_handoff:guided} as any;
+  const cameras=[
+    {shot_scale:'EXTREME_WIDE',lens:'35mm',angle:'Eye level',movement:'Static tripod',movement_speed:'None'},
+    {shot_scale:'WIDE',lens:'50mm',angle:'Front three-quarter',movement:'Slow push-in',movement_speed:'Slow'},
+    {shot_scale:'CLOSE_UP',lens:'85mm',angle:'High angle',movement:'Slow lateral track',movement_speed:'Slow'},
+    {shot_scale:'MEDIUM',lens:'50mm',angle:'Side three-quarter',movement:'Slow dolly',movement_speed:'Very Slow'},
+  ];
+  const resolved=cameras.map(camera=>resolveProductionScene(localTopic,{...direction,camera}).camera);
+  assert.deepEqual(resolved.map(camera=>camera.shotScale),['extreme-wide','wide','close-up','medium']);
+  assert.deepEqual(resolved.map(camera=>camera.viewpoint),['eye level','front three-quarter','high angle','side three-quarter']);
+  assert.deepEqual(resolved.map(camera=>camera.behavior),['locked camera','slow push-in','slow lateral tracking movement','slow dolly']);
+  assert.deepEqual(resolved.map(camera=>camera.lens),['wide-angle','normal','short telephoto','normal']);
+});
+
+test('uses one strict deduplicated identity signature across finished-product views',()=>{
+  const arTopic={...topic,_production_handoff:{...handoff,product:{official_name:'AR-2000',exact_variant:'AR-2000 shipborne rotary-wing UAS',immutable_identity_features:['cockpit-free fuselage','fixed landing gear']},geometry_modules:[{module_id:'FULL_PRODUCT',required_visible_features:['fixed landing gear','fixed landing gear sized for a roughly two-ton-class unmanned rotorcraft','single four-blade main rotor']}]} } as any;
+  const signature=canonicalIdentitySignature(arTopic);
+  assert.doesNotMatch(signature,/AR-2000 AR-2000/i);
+  assert.equal((signature.match(/fixed landing gear/gi)||[]).length,1);
+  const front={...direction,state:'C' as const,camera:{...direction.camera,angle:'front three-quarter'}};
+  const rear={...direction,state:'C' as const,camera:{...direction.camera,angle:'rear three-quarter'}};
+  const frontSections=normalizeOmniSections({},front,arTopic).sections;
+  const rearSections=normalizeOmniSections({},rear,arTopic).sections;
+  assert.ok(frontSections.product_state.startsWith(signature));
+  assert.ok(rearSections.product_state.startsWith(signature));
+});
+
+test('normalizes negative grammar and recompiles locally without changing upstream fields',()=>{
+  const finished={...direction,state:'C' as const,forbidden_elements:['Do not merge exhibition and shipboard variants','No pilot canopy','Avoid weapons']};
+  const oldPrompt={number:1,stage_id:finished.stage_id,state:finished.state,action_description:'Original action',video_prompt:'legacy prompt',voiceover:'Exact VO',stock_keywords:'aircraft',continuity_notes:'unchanged',quality_flags:[],omniSections:normalizeOmniSections({exclusions:'Do not invent markings'},finished,topic).sections};
+  const [compiled]=recompileOmniPrompts([oldPrompt],[{...finished,voiceover:'Exact VO'}],topic);
+  assert.doesNotMatch(compiled.video_prompt,/Exclude (?:Do not|No|Avoid)/i);
+  assert.match(compiled.video_prompt,/merging exhibition and shipboard variants/i);
+  assert.equal(compiled.action_description,oldPrompt.action_description);
+  assert.equal(compiled.stock_keywords,oldPrompt.stock_keywords);
+  assert.equal(compiled.voiceover,'Exact VO');
+  assert.equal(compiled.continuity_notes,oldPrompt.continuity_notes);
+});
+
+test('recompiles a 75-scene project in order with diverse cameras and a partial final scene',()=>{
+  const cameras=[
+    {shot_scale:'EXTREME_WIDE',lens:'24mm',angle:'Eye level',movement:'Slow forward aerial',movement_speed:'Slow'},
+    {shot_scale:'WIDE',lens:'35mm',angle:'Front three-quarter',movement:'Slow push-in',movement_speed:'Slow'},
+    {shot_scale:'MEDIUM',lens:'50mm',angle:'Side three-quarter',movement:'Slow dolly',movement_speed:'Very slow'},
+    {shot_scale:'CLOSE_UP',lens:'85mm',angle:'High angle',movement:'Slow lateral track',movement_speed:'Slow'},
+  ];
+  const directions=Array.from({length:75},(_,index)=>({...direction,number:index+1,start:index*10,end:index===74?745.75:(index+1)*10,duration:index===74?5.75:10,voiceover:`Exact VO ${index+1}`,camera:cameras[index%cameras.length]}));
+  const prompts=directions.map(item=>({number:item.number,stage_id:item.stage_id,state:item.state,action_description:item.primary_action,video_prompt:'legacy',voiceover:item.voiceover,stock_keywords:'assembly',continuity_notes:item.continuity_from_previous,quality_flags:[],omniSections:normalizeOmniSections({},item,topic).sections}));
+  const compiled=recompileOmniPrompts(prompts,directions,topic);
+  assert.deepEqual(compiled.map(item=>item.number),Array.from({length:75},(_,index)=>index+1));
+  assert.equal(new Set(compiled.map(item=>item.omniSections?.cinematography)).size,4);
+  assert.ok(compiled.every((item,index)=>item.voiceover===directions[index].voiceover));
+  assert.match(compiled.at(-1)!.video_prompt,/^5\.75-second continuous shot\./);
+  assert.ok(compiled.every(item=>(item.video_prompt.match(/\b\d+(?:\.\d+)?-second\b/gi)||[]).length===1));
+  const averageWords=compiled.reduce((sum,item)=>sum+item.video_prompt.split(/\s+/).length,0)/compiled.length;
+  assert.ok(averageWords<=160,`average prompt length was ${averageWords}`);
 });
 test('ranks exact counts, viewpoint anchors, and scene exclusions by relevance',()=>{
   const extended=JSON.parse(JSON.stringify(handoff));extended.product.immutable_identity_features.push('interior mission bay','overhead wing planform','generic low-priority feature');

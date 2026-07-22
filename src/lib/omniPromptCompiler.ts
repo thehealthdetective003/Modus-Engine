@@ -1,13 +1,32 @@
-import { OmniPromptSections, SceneDirection, TopicBrief } from '../types';
+import { OmniPromptSections, SceneDirection, T2VPrompt, TopicBrief } from '../types';
 
 const cleanSpace = (value: unknown) => String(value ?? '').replace(/\[object Object\]/gi, '').replace(/\s+/g, ' ').trim();
 const strings = (value: unknown): string[] => Array.isArray(value) ? value.flatMap(strings) : typeof value === 'string' ? value.split(/\s*[|;]\s*/).map(cleanSpace).filter(Boolean) : [];
 const commaStrings = (value:unknown):string[] => strings(value).flatMap(item=>item.split(/\s*,\s*/).map(cleanSpace).filter(Boolean));
 const key = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const normalizedCameraValue = (value: unknown) => cleanSpace(value).toLowerCase().replace(/[_/]+/g, ' ').replace(/\s+/g, ' ').trim();
 export const uniqueStrings = (values: unknown[]): string[] => {
   const seen = new Set<string>();
   return values.flatMap(strings).filter(value => { const normalized=key(value).replace(/^(no|avoid|exclude|without|do not show) /,''); if(!normalized||seen.has(normalized)) return false; seen.add(normalized); return true; });
 };
+
+const preferSpecific = (values: unknown[], limit = Number.POSITIVE_INFINITY): string[] => {
+  const unique=uniqueStrings(values);
+  return unique.filter((value,index)=>{
+    const normalized=key(value);
+    return !unique.some((other,otherIndex)=>otherIndex!==index&&key(other).includes(normalized)&&key(other).length>normalized.length);
+  }).slice(0,limit);
+};
+
+const negativeTerm = (value: unknown): string => cleanSpace(value)
+  .replace(/^(?:exclude|avoid|without)\s+/i,'')
+  .replace(/^no\s+/i,'')
+  .replace(/^do not\s+(?:show|include|use)\s+/i,'')
+  .replace(/^do not\s+merge\s+/i,'merging ')
+  .replace(/^do not\s+invent\s+/i,'invented ')
+  .replace(/^do not\s+change\s+/i,'changes to ')
+  .replace(/^do not\s+add\s+/i,'added ')
+  .trim();
 
 const sentence = (value: unknown): string => {
   let text=cleanSpace(value).replace(/\s+([,.;:!?])/g,'$1').replace(/([,.;:!?])\1+/g,'$1').replace(/\s*[,;:]\s*$/,'').trim();
@@ -17,13 +36,13 @@ const sentence = (value: unknown): string => {
   return /[.!?]$/.test(text) ? text : `${text}.`;
 };
 
-const supportedScale = ['medium close-up','medium-wide','close-up','medium','wide'];
-const supportedLens = ['long telephoto','short telephoto','wide-angle','normal'];
-const supportedView = ['front three-quarter','rear three-quarter','side profile','low side','interior-oblique','overhead'];
-const movementMap: Array<[RegExp,string]> = [
-  [/\b(lock|static|stationary)\b/i,'locked camera'],[/\bpan\b/i,'slow pan'],[/\b(push|move)\s*-?in\b/i,'slow push-in'],[/\b(pull|move)\s*-?back\b/i,'slow pull-back'],[/\b(crane|rise)\b/i,'restrained crane rise'],[/\b(dolly|lateral)\b/i,'slow lateral dolly'],[/\b(track(?:ing)?|follow(?:ing)?)\b/i,'restrained tracking movement'],
+const scaleMap:Array<[RegExp,string]>=[
+  [/\bextreme\s+wide\b/i,'extreme-wide'],[/\bmedium\s+close\s*up\b/i,'medium close-up'],[/\bmedium\s+wide\b/i,'medium-wide'],[/\bclose\s*up\b/i,'close-up'],[/\bmacro\b/i,'macro close-up'],[/\bwide\b/i,'wide'],[/\bmedium\b/i,'medium'],
 ];
-const pick = (value:string, options:string[], fallback:string) => options.find(option=>value.toLowerCase().includes(option)) || fallback;
+const movementMap: Array<[RegExp,string]> = [
+  [/\b(?:lock(?:ed)?|static|stationary|tripod)\b/i,'locked camera'],[/\bpan\b/i,'slow pan'],[/\b(?:push|move)\s*-?in\b/i,'slow push-in'],[/\b(?:pull|move)\s*-?back\b/i,'slow pull-back'],[/\b(?:crane|rise|aerial)\b/i,'restrained crane rise'],[/\blateral\s+dolly\b/i,'slow lateral dolly'],[/\blateral\s+(?:track|tracking)\b/i,'slow lateral tracking movement'],[/\bdolly\b/i,'slow dolly'],[/\btrack(?:ing)?\b|\bfollow(?:ing)?\b/i,'restrained tracking movement'],
+];
+const mapped = (value:string,map:Array<[RegExp,string]>) => map.find(([pattern])=>pattern.test(value))?.[1];
 const naturalList=(items:string[])=>items.length<2?(items[0]||''):items.length===2?`${items[0]} and ${items[1]}`:`${items.slice(0,-1).join(', ')}, and ${items.at(-1)}`;
 const viewPattern = (viewpoint:string) => viewpoint.includes('rear')?/(tail|fin|stabil|engine|rotodome|hook|rear)/i:viewpoint.includes('front')?/(forward|nose|wing|engine|nacelle|rotodome|gear|front)/i:viewpoint.includes('side')?/(proportion|wing|engine|rotodome|gear|fuselage|side)/i:viewpoint.includes('interior')?/(interior|cockpit|cabin|bay|rack|panel|interface)/i:viewpoint.includes('overhead')?/(planform|wing|span|roof|top|rotodome|layout)/i:null;
 const rankedUnique=(items:Array<{value:unknown;score:number}>,limit:number)=>{
@@ -45,7 +64,7 @@ export interface ResolvedProductionScene {
   forbidden: string[];
   confirmed: string[];
   inferred: string[];
-  camera: { shotScale:string; lens:string; viewpoint:string; behavior:string; movementCount:number; contradictions:string[] };
+  camera: { shotScale:string; lens:string; viewpoint:string; behavior:string; speed:string; movementCount:number; contradictions:string[] };
 }
 
 export function resolveProductionScene(topic: TopicBrief | null, direction: SceneDirection): ResolvedProductionScene {
@@ -60,23 +79,31 @@ export function resolveProductionScene(topic: TopicBrief | null, direction: Scen
   const references=(handoff.reference_assets||[]).filter((item:any)=>(stage.visual_evidence?.reference_asset_ids||[]).includes(item.asset_id));
   const transition=(handoff.stage_transitions||[]).find((item:any)=>item.from_stage_id===direction.stage_id)||{};
   const guidance=stage.camera_guidance||{};
-  const stageViews=strings(guidance.preferred_views).join(' ').toLowerCase();
-  const stageScales=strings(guidance.safe_shot_scales).join(' ').toLowerCase();
-  const stageMovements=strings(guidance.preferred_camera_movements).join(' ').toLowerCase();
-  const forbiddenMovements=strings(guidance.forbidden_camera_movements).join(' ').toLowerCase();
-  const rawCamera=`${direction.camera.shot_scale} ${direction.camera.lens} ${direction.camera.angle} ${direction.camera.movement}`.toLowerCase();
-  const directionMovements=movementMap.filter(([pattern])=>pattern.test(direction.camera.movement)).map(([,label])=>label);
-  const stageMovement=movementMap.find(([pattern])=>pattern.test(stageMovements))?.[1];
+  const stageViews=strings(guidance.preferred_views).map(normalizedCameraValue);
+  const stageScales=strings(guidance.safe_shot_scales).map(value=>mapped(normalizedCameraValue(value),scaleMap)).filter(Boolean) as string[];
+  const stageMovements=strings(guidance.preferred_camera_movements).map(value=>mapped(normalizedCameraValue(value),movementMap)).filter(Boolean) as string[];
+  const forbiddenMovements=strings(guidance.forbidden_camera_movements).map(normalizedCameraValue);
+  const scaleInput=normalizedCameraValue(direction.camera.shot_scale);
+  const lensInput=normalizedCameraValue(direction.camera.lens);
+  const viewpointInput=normalizedCameraValue(direction.camera.angle);
+  const movementInput=normalizedCameraValue(direction.camera.movement);
+  const rawCamera=`${scaleInput} ${lensInput} ${viewpointInput} ${movementInput}`;
+  const rawDirectionMovements=movementMap.filter(([pattern])=>pattern.test(movementInput)).map(([,label])=>label);
+  const directionMovements=rawDirectionMovements.some(label=>label==='slow lateral tracking movement')
+    ? rawDirectionMovements.filter(label=>label!=='restrained tracking movement')
+    : rawDirectionMovements.some(label=>label==='slow lateral dolly')
+      ? rawDirectionMovements.filter(label=>label!=='slow dolly')
+      : rawDirectionMovements;
   const contradictions:string[]=[];
   if(/static|locked/.test(rawCamera)&&/track|dolly|pan|push|pull|crane/.test(rawCamera)) contradictions.push('Locked/static camera conflicts with camera movement.');
   if(/macro/.test(rawCamera)&&/wide|medium-wide/.test(rawCamera)) contradictions.push('Macro conflicts with a wide shot scale.');
   if(/wide-angle/.test(rawCamera)&&/\b(?:50|85|100|135)\s*mm/.test(rawCamera)) contradictions.push('Wide-angle conflicts with the supplied focal length.');
   if(/close-up/.test(rawCamera)&&/establishing/.test(rawCamera)) contradictions.push('Close-up conflicts with an establishing view.');
-  const scaleSource=stageScales||direction.camera.shot_scale;
-  const shotScale=/macro/i.test(rawCamera)&&/\b(?:wide|medium-wide)\b/i.test(rawCamera)&&!stageScales?'close-up':pick(scaleSource,supportedScale,'medium-wide');
-  const focal=rawCamera.match(/\b(\d{2,3})\s*mm\b/)?.[1];
-  const lens=focal?(Number(focal)<=35?'wide-angle':Number(focal)<=60?'normal':'short telephoto'):pick(`${stageViews} ${direction.camera.lens}`,supportedLens,'normal');
-  const viewpoint=pick(stageViews||direction.camera.angle,supportedView,direction.camera.angle||'side profile');
+  const requestedScale=mapped(scaleInput,scaleMap);
+  const shotScale=requestedScale&&(!stageScales.length||stageScales.includes(requestedScale))?requestedScale:(stageScales[0]||'medium-wide');
+  const focal=lensInput.match(/\b(\d{2,3})\s*mm\b/)?.[1];
+  const lens=focal?(Number(focal)<=35?'wide-angle':Number(focal)<=60?'normal':Number(focal)<=100?'short telephoto':'long telephoto'):(/wide/.test(lensInput)?'wide-angle':/long\s+telephoto/.test(lensInput)?'long telephoto':/telephoto/.test(lensInput)?'short telephoto':/normal|standard/.test(lensInput)?'normal':'normal');
+  const viewpoint=viewpointInput||stageViews[0]||'side profile';
   const viewpointWords=viewpoint.toLowerCase();
   const viewTerms=viewPattern(viewpointWords);
   const identityCandidates=[
@@ -86,10 +113,11 @@ export function resolveProductionScene(topic: TopicBrief | null, direction: Scen
     ...strings(handoff.product?.immutable_identity_features).map(value=>({value,score:65+(viewTerms?.test(value)?30:0)})),
   ];
   const identity=rankedUnique(identityCandidates,6);
-  const movementConflict=directionMovements.length>1||(/static|locked/.test(rawCamera)&&/track|dolly|pan|push|pull|crane/.test(rawCamera));
-  let behavior=stageMovement||(!movementConflict?directionMovements[0]:undefined)||'locked camera';
+  const movementConflict=directionMovements.length>1||(/static|locked|tripod/.test(movementInput)&&/track|dolly|pan|push|pull|crane/.test(movementInput));
+  let behavior=(!movementConflict?directionMovements[0]:undefined)||(stageMovements[0]||'locked camera');
   const movementKeywords=key(behavior).split(' ').filter(word=>!['slow','restrained','camera','movement'].includes(word));
-  if(forbiddenMovements&&movementKeywords.some(word=>forbiddenMovements.includes(word)))behavior='locked camera';
+  if(forbiddenMovements.some(item=>movementKeywords.some(word=>item.includes(word))))behavior='locked camera';
+  const speed=/^(?:none|n\/a|static|locked)?$/i.test(cleanSpace(direction.camera.movement_speed))?'':normalizedCameraValue(direction.camera.movement_speed);
   return {
     stage,environment,geometryModules,references,transition,
     identity,
@@ -98,26 +126,52 @@ export function resolveProductionScene(topic: TopicBrief | null, direction: Scen
     exposed:uniqueStrings([stage.temporarily_exposed,stage.open_interfaces,stage.unfinished_edges_or_sections]),
     forbidden:uniqueStrings([stage.geometry_control?.negative_constraints,stage.geometry_control?.forbidden_transformations,stage.stage_actions?.flatMap((a:any)=>a.forbidden_actions||[]),environment.forbidden_elements,direction.forbidden_elements]),
     confirmed:uniqueStrings([stage.visual_evidence?.confirmed_visual_details]), inferred:uniqueStrings([stage.visual_evidence?.analyst_inferred_visual_details]),
-    camera:{ shotScale, lens, viewpoint, behavior, movementCount:directionMovements.length, contradictions },
+    camera:{ shotScale, lens, viewpoint, behavior, speed, movementCount:directionMovements.length, contradictions },
   };
 }
 
-function identitySentence(topic:TopicBrief|null,resolved:ResolvedProductionScene):string {
+const productName=(topic:TopicBrief|null):string=>{
   const product=(topic as any)?._production_handoff?.product;
-  const name=[product?.official_name,product?.exact_variant].filter(Boolean).join(' ') || topic?.topic.product || topic?.topic.title || 'product';
-  return sentence(resolved.identity.length?`Preserve the exact ${name} configuration with ${naturalList(resolved.identity)}`:`Preserve the exact ${name} configuration and proportions throughout the shot`);
+  const official=cleanSpace(product?.official_name);
+  const variant=cleanSpace(product?.exact_variant);
+  return variant&&official&&key(variant).startsWith(key(official))?variant:[official,variant].filter(Boolean).join(' ')||topic?.topic.product||topic?.topic.title||'product';
+};
+
+export function canonicalIdentitySignature(topic:TopicBrief|null):string {
+  const product=(topic as any)?._production_handoff?.product;
+  const handoff=(topic as any)?._production_handoff||{};
+  const name=productName(topic);
+  const fullModule=(handoff.geometry_modules||[]).find((item:any)=>item.module_id==='FULL_PRODUCT')||(handoff.geometry_modules||[])[0]||{};
+  const dimensions=handoff.dimensions_and_proportions||{};
+  const dimensionParts=[['overall length',dimensions.overall_length],['overall width or wingspan',dimensions.overall_width_or_wingspan],['overall height',dimensions.overall_height]].flatMap(([label,measurement]:any)=>measurement?.value!==null&&measurement?.value!==undefined?[`${label} ${measurement.value}${measurement.unit?` ${measurement.unit}`:''}`]:[]);
+  const immutable=preferSpecific([product?.immutable_identity_features],4);
+  const geometry=preferSpecific([fullModule.required_visible_features],4);
+  const proportions=preferSpecific([dimensions.important_proportion_rules,dimensionParts,dimensions.human_scale_reference],3);
+  const anchors=preferSpecific([
+    preferSpecific([product?.overall_visual_description],1),
+    immutable.slice(0,2),
+    geometry.slice(0,2),
+    proportions.slice(0,2),
+  ],7);
+  return sentence(anchors.length?`Preserve the same exact ${name} design in every clip: ${naturalList(anchors)}`:`Preserve the same exact ${name} design and proportions in every clip`);
 }
 
-function stateSentence(direction:SceneDirection,resolved:ResolvedProductionScene):string {
-  const present=resolved.present.length?`show ${naturalList(resolved.present)}`:`show ${direction.product_visual_state}`;
-  const absent=resolved.absent.length?` Do not show ${naturalList(resolved.absent)}`:'';
-  const exposed=resolved.exposed.length?` Keep ${naturalList(resolved.exposed)} visibly unfinished or exposed`:'';
-  return sentence(`Show only the incomplete State ${direction.state} configuration: ${present}.${exposed}.${absent}`.replace(/\.\s*\./g,'. '));
+function viewpointIdentitySentence(resolved:ResolvedProductionScene):string {
+  const anchors=preferSpecific(resolved.identity,4);
+  return anchors.length?sentence(`From this ${resolved.camera.viewpoint} viewpoint, keep ${naturalList(anchors)} clearly visible`):'';
+}
+
+function stateSentence(direction:SceneDirection,resolved:ResolvedProductionScene,topic:TopicBrief|null):string {
+  const presentItems=preferSpecific(resolved.present,5),absentItems=preferSpecific(resolved.absent,5),exposedItems=preferSpecific(resolved.exposed,4);
+  const present=presentItems.length?`show ${naturalList(presentItems)}`:`show ${direction.product_visual_state}`;
+  const absent=absentItems.length?` Do not show ${naturalList(absentItems)}`:'';
+  const exposed=exposedItems.length?` Keep ${naturalList(exposedItems)} visibly unfinished or exposed`:'';
+  return sentence(`Keep the underlying ${productName(topic)} proportions stable. Show only the incomplete State ${direction.state} configuration: ${present}.${exposed}.${absent}`.replace(/\.\s*\./g,'. '));
 }
 
 export function normalizeOmniSections(raw:any,direction:SceneDirection,topic:TopicBrief|null):{sections:OmniPromptSections;resolved:ResolvedProductionScene} {
   const resolved=resolveProductionScene(topic,direction);
-  const inferred=resolved.inferred.length?`Use a plausible modern production environment consistent with this stage; do not invent proprietary internal layouts`:'';
+  const inferred=resolved.inferred.length&&cleanSpace(direction.environment_description).length<45?`Use a plausible non-identifying production environment; do not invent proprietary internal layouts`:'';
   const factory=/factory|assembly|production|hangar|workshop/i.test(`${direction.environment_description} ${resolved.environment?.facility_type||''}`);
   const carrier=/carrier|maritime|deck/i.test(direction.environment_description);
   const sound=carrier?'Generate synchronized maritime deck ambience with wind, distant machinery, restrained deck-equipment movement, and physically matched mechanical sound':factory?'Generate synchronized factory ambience with distant ventilation, restrained machinery hum, soft tool contact, and subtle footsteps':'Generate realistic synchronized environmental and mechanical ambience appropriate to the visible action';
@@ -134,15 +188,18 @@ export function normalizeOmniSections(raw:any,direction:SceneDirection,topic:Top
     ...strings(resolved.environment.forbidden_elements).map(value=>({value,score:80})),
     ...commaStrings(raw?.exclusions).map(value=>({value,score:60})),
   ].filter(item=>!coveredStateTerms.has(key(String(item.value))));
+  const cleanExclusions=preferSpecific(rankedUnique(exclusionCandidates,7).map(negativeTerm).filter(Boolean),6);
+  const speedAlreadyExpressed=resolved.camera.speed==='slow'&&resolved.camera.behavior.startsWith('slow ');
+  const speedClause=resolved.camera.speed&&resolved.camera.behavior!=='locked camera'&&!speedAlreadyExpressed?` at ${resolved.camera.speed} speed`:'';
   const sections:OmniPromptSections={
-    cinematography:`Use a ${resolved.camera.shotScale} ${resolved.camera.viewpoint} view on a ${resolved.camera.lens} lens, with one ${resolved.camera.behavior}`,
+    cinematography:`Use a ${resolved.camera.shotScale} ${resolved.camera.viewpoint} view on a ${resolved.camera.lens} lens, with one ${resolved.camera.behavior}${speedClause}`,
     subject:/\b(?:is|are|stands|sits|rests|remains|appears|moves|shows)\b/i.test(rawSubject)?rawSubject:`The scene shows ${rawSubject}`,
     action:cleanSpace(raw?.action)||direction.primary_action,
     environment:[/\b(?:is|are|inside|within|across|on the|in the)\b/i.test(rawEnvironment)?rawEnvironment:`Set the shot in ${rawEnvironment}`,inferred].filter(Boolean).join('. '),
     style_lighting:/^(?:use|render|light|keep)\b/i.test(rawStyle)?rawStyle:`Use ${rawStyle}`,
-    product_state:direction.state==='C'?identitySentence(topic,resolved):stateSentence(direction,resolved),
+    product_state:direction.state==='C'?[canonicalIdentitySignature(topic),viewpointIdentitySentence(resolved)].filter(Boolean).join(' '):stateSentence(direction,resolved,topic),
     sound,
-    exclusions:rankedUnique(exclusionCandidates,8).join(', '),
+    exclusions:naturalList(cleanExclusions),
   };
   return {sections,resolved};
 }
@@ -150,5 +207,15 @@ export function normalizeOmniSections(raw:any,direction:SceneDirection,topic:Top
 export function compileOmniPrompt(sections:OmniPromptSections,direction:SceneDirection):string {
   const parts=[`${Number(direction.duration.toFixed(3))}-second continuous shot.`,sentence(sections.cinematography),sentence(sections.subject),sentence(sections.action),sentence(sections.environment),sentence(sections.style_lighting),sentence(sections.product_state),sentence(sections.sound),sentence('Exclude dialogue, narration, music, and readable generated text'),sections.exclusions?sentence(`Exclude ${sections.exclusions.replace(/^(exclude|no|avoid)\s+/i,'')}`):''];
   const seen=new Set<string>();
-  return parts.filter(Boolean).filter(part=>{const normalized=key(part);if(seen.has(normalized))return false;seen.add(normalized);return true;}).join(' ').replace(/\s+/g,' ').replace(/\.\s*\./g,'.').trim();
+  return parts.filter(Boolean).filter(part=>{const normalized=key(part);if(seen.has(normalized))return false;seen.add(normalized);return true;}).join(' ').replace(/\s+/g,' ').replace(/\.\s*\./g,'.').replace(/Exclude\s+(?:Do not|No|Avoid)\s+/gi,'Exclude ').trim();
+}
+
+export function recompileOmniPrompts(prompts:T2VPrompt[],directions:SceneDirection[],topic:TopicBrief|null):T2VPrompt[] {
+  const byNumber=new Map(directions.map(direction=>[direction.number,direction]));
+  return prompts.map(prompt=>{
+    const direction=byNumber.get(prompt.number);
+    if(!direction)return prompt;
+    const {sections}=normalizeOmniSections(prompt.omniSections||{},direction,topic);
+    return {...prompt,video_prompt:compileOmniPrompt(sections,direction),voiceover:direction.voiceover,omniSections:sections};
+  }).sort((a,b)=>a.number-b.number);
 }

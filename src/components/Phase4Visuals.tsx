@@ -13,7 +13,7 @@ import { buildFlowContext, finalizeFlowPrompt, profileInstruction } from '../lib
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
 import { createDirectionBatches, missingDirections, PromptBatchError, runSequentialBatches, T2V_BATCH_SIZE, validateBatchNumbers, validateBatchResponse } from '../lib/promptBatch';
-import { compileOmniPrompt, normalizeOmniSections } from '../lib/omniPromptCompiler';
+import { compileOmniPrompt, normalizeOmniSections, recompileOmniPrompts } from '../lib/omniPromptCompiler';
 
 interface Props { state: AppState; setState: Dispatch<SetStateAction<AppState>>; }
 const responseSchema = { type: Type.ARRAY, items: { type: Type.OBJECT, required: ['number','action_description','video_prompt','stock_keywords'], properties: {
@@ -108,6 +108,17 @@ export function Phase4Visuals({ state, setState }: Props) {
   const allText = [...shown].sort((a,b)=>a.number-b.number).map(prompt=>`${prompt.number}: ${prompt.video_prompt}`).join('\n\n');
   const exportCsv = () => download('t2v-prompts.csv', ['profile,number,start,end,duration,stage,state,action,voiceover,t2v_prompt,keywords,continuity,quality_flags',...state.visualPrompts.map(p=>{const d=directions[p.number-1];return [state.t2vPromptProfile,p.number,d?.start,d?.end,d?.duration,p.stage_id,p.state,p.action_description,p.voiceover,p.video_prompt,p.stock_keywords,p.continuity_notes,(p.quality_flags||[]).join('|')].map(csvCell).join(',')})].join('\n'),'text/csv');
   const exportVo = () => download('timestamped-vo.txt', directions.map(d=>`[${formatTimestamp(d.start)} - ${formatTimestamp(d.end)}] Scene ${d.number}${d.silent?' [SILENT]':''}\n${d.voiceover}`).join('\n\n'),'text/plain');
+  const recompileAll = () => {
+    if(state.t2vPromptProfile!=='omni-flash')return;
+    const promptCount=state.visualPrompts.length||state.demoScenes.length;
+    if(!promptCount)return;
+    setState(previous=>({
+      ...previous,
+      visualPrompts:recompileOmniPrompts(previous.visualPrompts,directions,previous.topic),
+      demoScenes:recompileOmniPrompts(previous.demoScenes,directions,previous.topic),
+    }));
+    toast.success(`Recompiled ${promptCount} Omni prompt${promptCount===1?'':'s'} locally. No API request was made.`);
+  };
 
   return <div className="space-y-6">
     <Button variant="link" className="p-0 text-muted-foreground" onClick={()=>setState(s=>({...s,phase:2}))}><ArrowLeft className="h-3 w-3 mr-1"/>Review Directions</Button>
@@ -129,7 +140,7 @@ export function Phase4Visuals({ state, setState }: Props) {
       {batchProgress.error&&<div className="flex gap-2 text-xs text-red-400"><AlertCircle className="h-4 w-4 shrink-0"/>{batchProgress.error}</div>}
     </div>}
     {isComplete && !batchProgress && <Badge className="bg-green-600/20 text-green-500 border-green-500/30">GENERATION COMPLETE · {directions.length} SCENES</Badge>}
-    {shown.length>0 && <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={async()=>toast[await copyToClipboard(allText)?'success':'error'](`Copied ${shown.length} prompt${shown.length===1?'':'s'} in scene order.`)}><Copy className="h-4 w-4 mr-2"/>COPY ALL PROMPTS</Button>{isComplete&&<><Button variant="outline" onClick={exportCsv}><Download className="h-4 w-4 mr-2"/>CSV</Button><Button variant="outline" onClick={exportVo}><Download className="h-4 w-4 mr-2"/>TIMESTAMPED VO</Button></>}</div>}
+    {shown.length>0 && <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={async()=>toast[await copyToClipboard(allText)?'success':'error'](`Copied ${shown.length} prompt${shown.length===1?'':'s'} in scene order.`)}><Copy className="h-4 w-4 mr-2"/>COPY ALL PROMPTS</Button>{state.t2vPromptProfile==='omni-flash'&&<Button variant="outline" onClick={recompileAll}><RefreshCw className="h-4 w-4 mr-2"/>RECOMPILE ALL PROMPTS</Button>}{isComplete&&<><Button variant="outline" onClick={exportCsv}><Download className="h-4 w-4 mr-2"/>CSV</Button><Button variant="outline" onClick={exportVo}><Download className="h-4 w-4 mr-2"/>TIMESTAMPED VO</Button></>}</div>}
     <div className="space-y-4">{shown.map(prompt=>{const d=directions[prompt.number-1];return <div key={prompt.number} className="border rounded-lg p-4 space-y-3">
       <div className="flex flex-wrap gap-2"><Badge>SCENE {prompt.number}</Badge><Badge variant="outline">{profileLabel}</Badge><Badge variant="outline">{formatTimestamp(d?.start||0)}–{formatTimestamp(d?.end||0)}</Badge><Badge variant="outline">{prompt.stage_id}</Badge><Badge variant="secondary">STATE {prompt.state}</Badge></div>
       <label className="text-[10px] text-muted-foreground">ACTION</label><Textarea value={prompt.action_description} onChange={e=>update(prompt.number,'action_description',e.target.value)} className="min-h-[65px]"/>
