@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { migrateProject, projectSceneDuration } from './projectMigration';
 import type { AppState } from '../types';
+import template from '../schemas/Modus_Visual_Production_Handoff_V2_Template.json';
+import { normalizeProductionHandoff } from './productionTemplate';
 
 const initial = { projectSchemaVersion: 5, projectName: 'Untitled', projectFormat: 'standard-lifecycle', phase: 1, topic: null, sceneDirections: [], masterVoiceoverScript: '', voiceoverTranscription: null, t2vPromptProfile:'omni-flash', visualPrompts: [], demoState: 'idle', demoScenes: [], demoSceneNumbers: [] } as AppState;
 
@@ -22,8 +24,6 @@ test('round-trips a complete 8-second T2V project without changing its timeline'
   assert.equal(result.state?.voiceoverTranscription?.sceneDurationSeconds, 8);
   assert.equal(result.state?.visualPrompts.length, 1);
   assert.equal(result.state?.projectSchemaVersion, 5);
-  assert.ok(result.state?.visualPrompts[0].omniSections);
-  assert.ok(result.state?.visualPrompts[0].diagnostics);
   assert.equal('apiKey' in parsed, false);
 
   const partial = JSON.parse(JSON.stringify(raw));
@@ -42,4 +42,12 @@ test('clears legacy Phase 3 prompts while preserving valid directions', () => {
   assert.equal(result.state?.phase, 3);
   assert.equal(result.state?.sceneDirections.length, 1);
   assert.deepEqual(result.state?.visualPrompts, []);
+});
+
+test('preserves the complete V2 handoff through project JSON migration', () => {
+  const topic = normalizeProductionHandoff(JSON.parse(JSON.stringify(template)));
+  const exported = JSON.parse(JSON.stringify({ ...initial, topic, phase: 1 }));
+  const result = migrateProject(exported, initial, 10);
+  assert.deepEqual(result.state?.topic?._production_handoff, template);
+  assert.deepEqual(result.state?.topic?._production_handoff?.visual_story_plan, template.visual_story_plan);
 });

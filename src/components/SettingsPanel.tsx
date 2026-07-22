@@ -32,7 +32,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { DEFAULT_PRODUCTION_TEMPLATE, validateProductionTemplate } from '../lib/productionTemplate';
+import { DEFAULT_PRODUCTION_TEMPLATE } from '../lib/productionTemplate';
+import { HandoffValidationResult, validateVisualProductionHandoff } from '../lib/handoffValidation';
 
 interface SettingsPanelProps {
   state: AppState;
@@ -43,6 +44,8 @@ interface SettingsPanelProps {
 
 export function SettingsPanel({ state, setState, open, onOpenChange }: SettingsPanelProps) {
   const { settings, setSettings } = useSettings();
+  const productionTemplateStatus = validateVisualProductionHandoff(settings.productionTemplate || DEFAULT_PRODUCTION_TEMPLATE);
+  const [templateImportResult, setTemplateImportResult] = useState<HandoffValidationResult | null>(null);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -161,12 +164,8 @@ export function SettingsPanel({ state, setState, open, onOpenChange }: SettingsP
                   <SelectContent><SelectItem value="8">8 seconds</SelectItem><SelectItem value="10">10 seconds</SelectItem></SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">OMNI SCENE SIMILARITY THRESHOLD</Label>
-                <Input type="number" min="0.5" max="0.95" step="0.01" value={settings.omniSimilarityThreshold} onChange={event=>setSettings(previous=>({...previous,omniSimilarityThreshold:Math.min(.95,Math.max(.5,Number(event.target.value)||.78))}))} className="bg-muted/20 border-border/40 h-9 font-mono text-xs" />
-              </div>
             </div>
-            <p className="text-[10px] text-muted-foreground leading-relaxed normal-case">Import word-timestamp transcription JSON in Phase 2. Changing scene duration re-splits existing timestamps and clears generated downstream output. Omni Flash flags structured scene similarity at the configured 0–1 threshold.</p>
+            <p className="text-[10px] text-muted-foreground leading-relaxed normal-case">Import word-timestamp transcription JSON in Phase 2. Changing scene duration re-splits existing timestamps and clears generated downstream output.</p>
           </div>
 
           <div className="space-y-4">
@@ -184,7 +183,10 @@ export function SettingsPanel({ state, setState, open, onOpenChange }: SettingsP
                   <p className="text-[10px] text-muted-foreground mt-1 normal-case">
                     {settings.productionTemplateImportedAt
                       ? `Imported ${new Date(settings.productionTemplateImportedAt).toLocaleString()}`
-                      : 'Bundled Modus Assembly Visual Production Handoff v1.0.0'}
+                      : 'Bundled Modus Visual Production Handoff v2.0.0'}
+                  </p>
+                  <p className={`text-[10px] mt-1 font-bold ${productionTemplateStatus.valid ? 'text-green-500' : 'text-destructive'}`}>
+                    {productionTemplateStatus.status}{productionTemplateStatus.version ? ` · ${productionTemplateStatus.version}` : ''}
                   </p>
                 </div>
               </div>
@@ -206,9 +208,11 @@ export function SettingsPanel({ state, setState, open, onOpenChange }: SettingsP
                       reader.onload = () => {
                         try {
                           const parsed = JSON.parse(String(reader.result));
-                          const errors = validateProductionTemplate(parsed);
-                          if (errors.length) {
-                            toast.error(`Template not activated: ${errors.join(' ')}`);
+                          const result = validateVisualProductionHandoff(parsed);
+                          setTemplateImportResult(result);
+                          if (!result.valid || (result.format !== 'v1' && result.format !== 'v2')) {
+                            const details = result.errors.slice(0, 3).map(item => `${item.path}: ${item.message}`).join(' ');
+                            toast.error(`Template not activated (${result.status}). ${details}`);
                             return;
                           }
                           setSettings(prev => ({
@@ -217,8 +221,9 @@ export function SettingsPanel({ state, setState, open, onOpenChange }: SettingsP
                             productionTemplateName: parsed.schema?.name || file.name,
                             productionTemplateImportedAt: new Date().toISOString(),
                           }));
-                          toast.success('Production template imported and activated.');
+                          toast.success(`${result.status} template imported and activated.`);
                         } catch {
+                          setTemplateImportResult(validateVisualProductionHandoff(null));
                           toast.error('The selected file is not valid JSON.');
                         } finally {
                           input.value = '';
@@ -233,13 +238,24 @@ export function SettingsPanel({ state, setState, open, onOpenChange }: SettingsP
                   size="sm"
                   className="h-9 text-[10px] font-mono"
                   onClick={() => {
-                    setSettings(prev => ({ ...prev, productionTemplate: DEFAULT_PRODUCTION_TEMPLATE, productionTemplateName: 'Modus Assembly Visual Production Handoff', productionTemplateImportedAt: undefined }));
-                    toast.success('Bundled production template restored.');
+                    setSettings(prev => ({ ...prev, productionTemplate: DEFAULT_PRODUCTION_TEMPLATE, productionTemplateName: 'Modus Visual Production Handoff V2', productionTemplateImportedAt: undefined }));
+                    setTemplateImportResult(validateVisualProductionHandoff(DEFAULT_PRODUCTION_TEMPLATE));
+                    toast.success('Bundled V2 production template restored.');
                   }}
                 >
                   <RotateCcw className="h-3.5 w-3.5 mr-2" /> RESTORE
                 </Button>
               </div>
+              {templateImportResult && !templateImportResult.valid && (
+                <div className="rounded border border-destructive/30 bg-destructive/10 p-3 text-[10px] text-destructive normal-case">
+                  <p className="font-bold uppercase tracking-wider">Invalid</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-4">
+                    {templateImportResult.errors.map((item, index) => (
+                      <li key={`${item.path}-${item.code}-${index}`}><span className="font-bold">{item.path}</span>: {item.message}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           </div>
 

@@ -125,7 +125,6 @@ export function validateAdaptiveWarnings(data: any): string[] {
   const notClauses = (exclusions.match(/\b(?:NOT|NO)\b/gi) || []).length;
 
   if (v2 && (count < 5 || count > 8)) warnings.push(`lifecycle_stage_count should resolve to 5-8; currently ${count || 0}`);
-  if (v2 && topic.environments.length !== getLifecycleStages(topic).length) warnings.push('environments length should equal lifecycle_stages length');
   if (!topic.product_identity_lock) warnings.push('product_identity_lock missing');
   if (!topic.visual_lock) warnings.push('visual_lock missing; legacy anchor fallback may be used');
   if (notClauses < 2) warnings.push('visual_exclusions should include at least two NOT/NO clauses');

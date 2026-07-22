@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compactIdentity, finalizeFlowPrompt, normalizeConstraintList, profileInstruction } from './flowPrompt';
+import { buildFlowContext, compactIdentity, finalizeFlowPrompt, normalizeConstraintList, profileInstruction } from './flowPrompt';
 import type { SceneDirection, TopicBrief } from '../types';
 
 const direction = { number:1,start:0,end:10,duration:10,voiceover:'',silent:false,stage_id:'S01',state:'C',subject:'KJ-600',product_visual_state:'Complete',primary_action:'Taxis',supporting_motion:'Crew signals',environment_ref:'deck',environment_description:'Carrier deck',camera:{shot_scale:'medium-wide',lens:'35mm',angle:'low three-quarter',movement:'tracking',movement_speed:'slow'},lighting_and_material:'Daylight grey paint',continuity_from_previous:'None',transition_to_next:'Cut',required_visible_features:['rotodome'],forbidden_elements:['Jet engines','Weapons'] } satisfies SceneDirection;
@@ -21,4 +21,16 @@ test('Veo uses descriptive negative-prompt grammar instead of no/don’t command
   const result = finalizeFlowPrompt('A camera tracks the aircraft across the deck.', direction, topic, 'veo-flow');
   assert.match(result, /Negative prompt: Jet engines, Weapons/);
   assert.doesNotMatch(result, /Negative prompt: (?:No|Avoid|Do not)/i);
+});
+test('Omni receives only batch-relevant handoff records while Veo remains unchanged',()=>{
+  const handoff={schema:{name:'Handoff'},product:{official_name:'KJ-600'},dimensions_and_proportions:{overall_length:30},global_prompt_rules:{one_primary_action:true},production_stages:[{stage_id:'S01',environment_id:'E1',geometry_control:{primary_geometry_module_id:'M1'},visual_evidence:{reference_asset_ids:['R1']}},{stage_id:'S99',environment_id:'E99',geometry_control:{primary_geometry_module_id:'M99'},visual_evidence:{reference_asset_ids:['R99']}}],environments:[{environment_id:'E1'},{environment_id:'E99'}],geometry_modules:[{module_id:'M1'},{module_id:'M99'}],reference_assets:[{asset_id:'R1'},{asset_id:'R99'}],stage_transitions:[{from_stage_id:'S00',to_stage_id:'S01'},{from_stage_id:'S01',to_stage_id:'S02'},{from_stage_id:'S98',to_stage_id:'S99'}]};
+  const scopedTopic={...topic,_production_handoff:handoff} as any;
+  const omni:any=buildFlowContext(scopedTopic,[direction],'omni-flash');
+  assert.deepEqual(omni.authoritative_production_handoff.production_stages.map((item:any)=>item.stage_id),['S01']);
+  assert.deepEqual(omni.authoritative_production_handoff.environments.map((item:any)=>item.environment_id),['E1']);
+  assert.deepEqual(omni.authoritative_production_handoff.geometry_modules.map((item:any)=>item.module_id),['M1']);
+  assert.deepEqual(omni.authoritative_production_handoff.reference_assets.map((item:any)=>item.asset_id),['R1']);
+  assert.equal(omni.authoritative_production_handoff.stage_transitions.length,2);
+  assert.equal(omni.authoritative_production_handoff.product.official_name,'KJ-600');
+  assert.equal('authoritative_production_handoff' in buildFlowContext(scopedTopic,[direction],'veo-flow'),false);
 });

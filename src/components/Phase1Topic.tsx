@@ -17,6 +17,7 @@ import { normalizeTopicBrief, validateAdaptiveBrief, validateAdaptiveWarnings, g
 import { StandardPreview } from './previews/StandardPreview';
 import { useSettings } from './SettingsContext';
 import { DEFAULT_PRODUCTION_TEMPLATE, isProductionHandoff, normalizeProductionHandoff, productionTemplatePrompt } from '../lib/productionTemplate';
+import { HandoffValidationResult, validateVisualProductionHandoff } from '../lib/handoffValidation';
 interface Phase1TopicProps {
   state: AppState;
   setState: React.Dispatch<React.SetStateAction<AppState>>;
@@ -32,6 +33,7 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [isValid, setIsValid] = useState(false);
   const [parsedBrief, setParsedBrief] = useState<TopicBrief | null>(null);
+  const [validationResult, setValidationResult] = useState<HandoffValidationResult | null>(null);
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -49,7 +51,9 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
     if (state.topic && !jsonInput) {
       setJsonInput(JSON.stringify(state.topic, null, 2));
       setParsedBrief(state.topic);
-      setIsValid(true);
+      const result = validateVisualProductionHandoff(state.topic);
+      setValidationResult(result);
+      setIsValid(result.valid);
     } else if (!state.topic && !jsonInput) {
       setJsonInput(standardBlankTemplate);
     }
@@ -81,33 +85,40 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
       const parsed = JSON.parse(await file.text());
       setJsonInput(JSON.stringify(parsed, null, 2));
       setShowPasteEditor(true);
+      const result = validateVisualProductionHandoff(parsed);
+      setValidationResult(result);
       setIsValid(false); setParsedBrief(null); setError(null); setWarnings([]);
-      toast.success('Production JSON imported. Validate it to continue.');
-    } catch { setError('Invalid JSON file. Check its syntax and try again.'); }
+      if (result.valid) toast.success(`${result.status} imported. Validate and load it to continue.`);
+      else {
+        setError('Invalid production JSON. Fix the listed errors before loading it.');
+        toast.error('Invalid production JSON. The current project was not changed.');
+      }
+    } catch {
+      setValidationResult(validateVisualProductionHandoff(null));
+      setError('Invalid JSON file. Check its syntax and try again.');
+    }
   };
   const handleValidate = () => {
     setError(null);
     setWarnings([]);
     setIsValid(false);
     setParsedBrief(null);
+    setValidationResult(null);
     if (!jsonInput.trim()) {
       setError('Please paste some JSON first.');
       return;
     }
     try {
       const parsed = JSON.parse(jsonInput);
+      const result = validateVisualProductionHandoff(parsed);
+      setValidationResult(result);
+      if (!result.valid) {
+        setError('Invalid production JSON. Fix the listed schema or reference errors before loading it.');
+        return;
+      }
       const normalized = isProductionHandoff(parsed) ? normalizeProductionHandoff(parsed) : normalizeTopicBrief(parsed);
       const missing = validateAdaptiveBrief(normalized);
       const adaptiveWarnings = validateAdaptiveWarnings(normalized);
-      
-      const updates: Partial<AppState> = {};
-      if (normalized.master_voiceover_script !== undefined) {
-        updates.masterVoiceoverScript = normalized.master_voiceover_script || "";
-      }
-      
-      if (Object.keys(updates).length > 0) {
-        setState(prev => ({ ...prev, ...updates }));
-      }
       
       if (missing.length > 0) {
         setWarnings([...missing.map(item => `Missing: ${item}`), ...adaptiveWarnings]);
@@ -120,6 +131,7 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
         setIsValid(true);
       }
     } catch (e) {
+      setValidationResult(validateVisualProductionHandoff(null));
       setError('Invalid JSON. Check your brackets and quotes.');
     }
   };
@@ -129,6 +141,7 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
     setState((prev) => ({
       ...prev,
       topic: parsedBrief,
+      masterVoiceoverScript: parsedBrief.master_voiceover_script || '',
       projectName: parsedBrief.topic?.product || parsedBrief.topic?.title || "Untitled",
       phase: 2,
     }));
@@ -197,6 +210,7 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
                   setParsedBrief(null);
                   setError(null);
                   setWarnings([]);
+                  setValidationResult(null);
                 }}
                 placeholder="{ paste your completed topic brief JSON here... }"
                 className="h-[500px] overflow-y-auto resize-none font-mono text-xs bg-muted/30 dark:bg-[#040406] border-border/60 hover:border-amber-500/20 focus-visible:ring-amber-500/50 p-4 text-foreground dark:text-amber-100 shadow-[inset_0_2px_4px_rgba(0,0,0,0.06)] dark:shadow-[inset_0_2px_8px_rgba(0,0,0,0.8)] focus-visible:border-amber-500/50 rounded-md"
@@ -216,6 +230,23 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
             <AlertCircle className="h-4 w-4 shrink-0" />
             {error}
           </motion.div>
+        )}
+        {validationResult && (
+          <div className={cn(
+            'rounded-md border p-3 font-mono text-xs',
+            validationResult.valid
+              ? 'border-green-500/30 bg-green-500/10 text-green-400'
+              : 'border-destructive/30 bg-destructive/10 text-destructive'
+          )}>
+            <div className="font-bold uppercase tracking-wider">{validationResult.status}</div>
+            {!validationResult.valid && validationResult.errors.length > 0 && (
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                {validationResult.errors.map((item, index) => (
+                  <li key={`${item.path}-${item.code}-${index}`}><span className="font-bold">{item.path}</span>: {item.message}</li>
+                ))}
+              </ul>
+            )}
+          </div>
         )}
         {warnings.length > 0 && (
           <motion.div 
@@ -267,8 +298,19 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
             <div className="space-y-6">
                 <div className="flex flex-wrap gap-2">
                   <Badge variant="outline" className="font-mono text-[10px] border-blue-500/30 text-blue-400 bg-blue-500/5">
-                    {String(parsedBrief.schema_version || '').includes('2') ? 'V2 SCHEMA DETECTED' : 'LEGACY JSON'}
+                    {validationResult?.status.toUpperCase() || 'VALID LEGACY V1'}
                   </Badge>
+                  {validationResult?.format === 'v2' && (() => {
+                    const source = parsedBrief._production_handoff as any;
+                    const chapters = source?.visual_story_plan?.chapters || [];
+                    const beatCount = chapters.reduce((total: number, chapter: any) => total + (chapter.visual_beats?.length || 0), 0);
+                    return <>
+                      <Badge variant="outline" className="font-mono text-[10px] border-blue-500/30 text-blue-400 bg-blue-500/5">V{validationResult.version}</Badge>
+                      <Badge variant="outline" className="font-mono text-[10px] border-blue-500/30 text-blue-400 bg-blue-500/5">{chapters.length} CHAPTERS</Badge>
+                      <Badge variant="outline" className="font-mono text-[10px] border-blue-500/30 text-blue-400 bg-blue-500/5">{beatCount} BEATS</Badge>
+                      <Badge variant="outline" className="font-mono text-[10px] border-blue-500/30 text-blue-400 bg-blue-500/5">{source?.environments?.length || 0} ENVIRONMENTS</Badge>
+                    </>;
+                  })()}
                   <Badge variant="outline" className="font-mono text-[10px] border-amber-500/30 text-amber-400 bg-amber-500/5">
                     {getLifecycleStageCount(parsedBrief)} STAGES
                   </Badge>

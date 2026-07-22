@@ -55,7 +55,12 @@ export function validateSceneDirections(directions: unknown, timedScenes: TimedS
   return [...new Set(errors)];
 }
 
-export function calculateStageSummary(directions: SceneDirection[]) {
+export interface StageSummaryItem {
+  stage_id: string;
+  scenes: number;
+}
+
+export function calculateStageSummary(directions: SceneDirection[]): StageSummaryItem[] {
   const counts = new Map<string, number>();
   directions.forEach(item => counts.set(item.stage_id, (counts.get(item.stage_id) || 0) + 1));
   return [...counts.entries()].map(([stage_id, scenes]) => ({ stage_id, scenes }));

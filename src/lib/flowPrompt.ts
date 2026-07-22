@@ -47,6 +47,33 @@ export function profileInstruction(profile: T2VPromptProfile): string {
     : `Write compact cinematography directions optimized for Veo in Google Flow. Emphasize subject composition, shot scale, lens, camera path, controlled action, lighting, material realism, and continuity. ${common}`;
 }
 
+export function buildFocusedProductionContext(topic: TopicBrief | null, directions: SceneDirection[]) {
+  const handoff=(topic as any)?._production_handoff;
+  if(!handoff||typeof handoff!=='object') return null;
+  const stageIds=new Set(directions.map(direction=>direction.stage_id).filter(Boolean));
+  const environmentIds=new Set(directions.map(direction=>direction.environment_ref).filter(Boolean));
+  const stages=(Array.isArray(handoff.production_stages)?handoff.production_stages:[]).filter((stage:any)=>stageIds.has(stage.stage_id));
+  stages.forEach((stage:any)=>{if(stage.environment_id)environmentIds.add(stage.environment_id);});
+  const moduleIds=new Set<string>();
+  const referenceIds=new Set<string>();
+  stages.forEach((stage:any)=>{
+    if(stage.geometry_control?.primary_geometry_module_id)moduleIds.add(stage.geometry_control.primary_geometry_module_id);
+    (stage.geometry_control?.secondary_geometry_module_ids||[]).forEach((id:string)=>moduleIds.add(id));
+    (stage.visual_evidence?.reference_asset_ids||[]).forEach((id:string)=>referenceIds.add(id));
+  });
+  return {
+    schema:handoff.schema,
+    product:handoff.product,
+    dimensions_and_proportions:handoff.dimensions_and_proportions,
+    global_prompt_rules:handoff.global_prompt_rules,
+    production_stages:stages,
+    environments:(handoff.environments||[]).filter((environment:any)=>environmentIds.has(environment.environment_id)),
+    geometry_modules:(handoff.geometry_modules||[]).filter((module:any)=>moduleIds.has(module.module_id)),
+    reference_assets:(handoff.reference_assets||[]).filter((asset:any)=>referenceIds.has(asset.asset_id)),
+    stage_transitions:(handoff.stage_transitions||[]).filter((transition:any)=>stageIds.has(transition.from_stage_id)||stageIds.has(transition.to_stage_id)),
+  };
+}
+
 function stripInjectedClauses(value: string): string {
   return value
     .replace(/(?:exact\s+)?\d+(?:\.\d+)?[-\s]second(?:\s+continuous)?\s+shot[.:]?/gi, ' ')
@@ -78,7 +105,7 @@ export function buildFlowContext(topic: TopicBrief | null, directions: SceneDire
     canonical_finished_identity: compactIdentity(topic),
     cinematography_rules: topic?.cinematography_rules,
     continuity_rules: topic?.scene_continuity_rules,
-    ...(profile === 'omni-flash' ? { authoritative_production_handoff: (topic as any)?._production_handoff || null } : {}),
+    ...(profile === 'omni-flash' ? { authoritative_production_handoff: buildFocusedProductionContext(topic,directions) } : {}),
     scenes: directions.map(direction => ({ ...direction, relevant_forbidden_elements: relevantNegatives(direction, topic) })),
   };
 }

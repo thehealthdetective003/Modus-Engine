@@ -1,7 +1,6 @@
 import { AppState, T2VPrompt } from '../types';
 import { resplitTranscription } from './timedTranscript';
 import { validateSceneDirections } from './sceneDirections';
-import { defaultLocks, diagnosticsFor, normalizeOmniSections, validateOmniPrompt } from './omniPromptCompiler';
 
 export type MigrationResult = { state: AppState | null; message?: string; error?: string };
 
@@ -36,15 +35,14 @@ export function migrateProject(raw: any, initial: AppState, sceneDuration: 8 | 1
   });
   const compatiblePrompts: T2VPrompt[] = directionsValid && !imageMode && profileSupported && promptsCompatible
     ? rawPrompts.map((item: any) => {
-        const number=Number(item.number);const direction=rawDirections.find((entry:any)=>Number(entry.number)===number);
+        const number=Number(item.number);
         const base:T2VPrompt={
         number, stage_id: item.stage_id || item.stage_ref, state: item.state,
         continuity_notes: item.continuity_notes, quality_flags: item.quality_flags,
         action_description: String(item.action_description || ''), video_prompt: String(item.video_prompt || ''),
         voiceover: transcription.scenes[number - 1]?.text || '', stock_keywords: String(item.stock_keywords || ''),
-        omniSections:item.omniSections,diagnostics:item.diagnostics,validationIssues:item.validationIssues,acceptedWarningCodes:Array.isArray(item.acceptedWarningCodes)?item.acceptedWarningCodes:[],locks:item.locks||defaultLocks(),revisions:Array.isArray(item.revisions)?item.revisions:[],
+        omniSections:item.omniSections,
       };
-      if(raw.t2vPromptProfile==='omni-flash'&&direction){const sections=base.omniSections||normalizeOmniSections({},direction,raw.topic).sections;const diagnostics=diagnosticsFor(direction,raw.topic,rawDirections);base.omniSections=sections;base.diagnostics=diagnostics;base.validationIssues=validateOmniPrompt(base.video_prompt,sections,direction,raw.topic,diagnostics,.78);}
       return base;
     })
     : [];

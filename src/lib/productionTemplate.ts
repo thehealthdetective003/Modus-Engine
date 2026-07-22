@@ -1,9 +1,10 @@
 import { TopicBrief } from '../types';
+import { DEFAULT_V2_PRODUCTION_TEMPLATE, validateVisualProductionHandoff } from './handoffValidation';
 
 const measurement = () => ({ value: null, unit: '', confidence: 'UNKNOWN' });
 
 /** Bundled copy of Modus_Assembly_Visual_Production_JSON_Template.json. */
-export const DEFAULT_PRODUCTION_TEMPLATE: Record<string, any> = {
+export const LEGACY_PRODUCTION_TEMPLATE: Record<string, any> = {
   schema: { name: 'Modus Assembly Visual Production Handoff', version: '1.0.0' },
   product: {
     official_name: '', exact_variant: '', product_class: '', manufacturer: '', aliases: [],
@@ -54,6 +55,7 @@ export const DEFAULT_PRODUCTION_TEMPLATE: Record<string, any> = {
     geometry_transformation_forbidden: true, generic_product_fallback_forbidden: true, reference_asset_required_when_text_is_insufficient: true,
   },
 };
+export const DEFAULT_PRODUCTION_TEMPLATE: Record<string, any> = DEFAULT_V2_PRODUCTION_TEMPLATE;
 
 const strings = (value: any): string[] => Array.isArray(value) ? value.map(String).filter(Boolean) : value ? [String(value)] : [];
 const describe = (record: any, omit: string[] = []) => Object.entries(record || {})
@@ -61,15 +63,7 @@ const describe = (record: any, omit: string[] = []) => Object.entries(record || 
   .map(([key, value]) => `${key.replace(/_/g, ' ')}: ${Array.isArray(value) ? value.join(', ') : String(value)}`).join('; ');
 
 export function validateProductionTemplate(data: any): string[] {
-  const errors: string[] = [];
-  if (!data || typeof data !== 'object' || Array.isArray(data)) return ['The file must contain one JSON object.'];
-  if (!data.schema?.name || !data.schema?.version) errors.push('schema.name and schema.version are required.');
-  if (!data.product || typeof data.product !== 'object') errors.push('product is required.');
-  if (!Array.isArray(data.geometry_modules)) errors.push('geometry_modules must be an array.');
-  if (!Array.isArray(data.environments)) errors.push('environments must be an array.');
-  if (!Array.isArray(data.production_stages)) errors.push('production_stages must be an array.');
-  if (!data.global_prompt_rules || typeof data.global_prompt_rules !== 'object') errors.push('global_prompt_rules is required.');
-  return errors;
+  return validateVisualProductionHandoff(data).errors.map(error=>`${error.path}: ${error.message}`);
 }
 
 export function productionTemplatePrompt(template: Record<string, any>): string {
@@ -88,7 +82,7 @@ export function normalizeProductionHandoff(input: any): TopicBrief {
   const environments = (input.environments || []).map((env: any, index: number) => ({
     environment_id: env.environment_id || `E${String(index + 1).padStart(2, '0')}`,
     name: env.environment_name || env.environment_id || `Environment ${index + 1}`,
-    environment_type: env.facility_type,
+    environment_type: env.setting_scope || env.facility_type,
     visual_details: describe(env, ['environment_id', 'environment_name', 'forbidden_elements']),
     confirmed_visuals: describe(env, ['environment_id', 'environment_name', 'forbidden_elements']),
     do_not_show: strings(env.forbidden_elements),
@@ -100,8 +94,8 @@ export function normalizeProductionHandoff(input: any): TopicBrief {
     return {
       stage_id: stage.stage_id || `S${String(index + 1).padStart(2, '0')}`,
       stage_name: stage.stage_name || `Production stage ${index + 1}`,
-      environment_ref: stage.environment_id,
-      stage_function: stage.stage_visual_summary,
+      environment_ref: stage.environment_ids?.[0] || stage.environment_id || '',
+      stage_function: stage.production_function || stage.stage_visual_summary,
       action: actions.join(' ') || stage.stage_visual_summary || '',
       product_visual_state: describe(stage.product_state),
       state,

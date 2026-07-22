@@ -35,7 +35,10 @@ export function Phase2Script({ state, setState }: Props) {
   const scenes = state.voiceoverTranscription?.scenes || [];
   const parsed = useMemo(() => { try { const value = JSON.parse(editor); return Array.isArray(value) ? value as SceneDirection[] : null; } catch { return null; } }, [editor]);
   const errors = useMemo(() => parsed ? validateSceneDirections(parsed, scenes) : ['Directions must be a valid JSON array.'], [parsed, scenes]);
-  const stageSummary = useMemo(() => parsed && errors.length === 0 ? calculateStageSummary(parsed) : {}, [parsed, errors]);
+  const stageSummary = useMemo(
+    () => parsed && errors.length === 0 ? calculateStageSummary(parsed) : [],
+    [parsed, errors],
+  );
   const transcript = state.voiceoverTranscription;
 
   const generate = async () => {
@@ -79,7 +82,7 @@ export function Phase2Script({ state, setState }: Props) {
       <div className="flex justify-between"><Badge variant="outline">STRICT SCENE-DIRECTION JSON</Badge><Button size="sm" variant="ghost" onClick={async()=>toast[await copyToClipboard(editor)?'success':'error']('JSON copied')}><Copy className="h-3 w-3 mr-2"/>COPY</Button></div>
       <Textarea value={editor} onChange={e=>setEditor(e.target.value)} className="min-h-[520px] font-mono text-xs" spellCheck={false}/>
       {errors.length ? <div className="border border-red-500/30 bg-red-500/5 rounded-md p-3 text-xs text-red-400">{errors.slice(0,5).map((e,i)=><div key={i}>• {e}</div>)}</div> : <div className="text-xs text-green-500 flex items-center gap-2"><CheckCircle2 className="h-4 w-4"/>Schema valid; imported timing and VO metadata are unchanged.</div>}
-      {Object.keys(stageSummary).length > 0 && <div className="flex flex-wrap gap-2">{Object.entries(stageSummary).map(([stage,count])=><Badge key={stage} variant="secondary">{stage}: {count}</Badge>)}</div>}
+      {stageSummary.length > 0 && <div className="flex flex-wrap gap-2">{stageSummary.map(item=><Badge key={item.stage_id} variant="secondary">{item.stage_id}: {item.scenes}</Badge>)}</div>}
     </div>
     <Button onClick={approve} disabled={errors.length > 0} className="w-full h-14 font-bold tracking-widest">APPROVE DIRECTIONS → PHASE 3</Button>
   </div>;

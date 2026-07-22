@@ -8,9 +8,8 @@ const defaultSettings: Settings = {
   defaultDuration: '3',
   defaultStyle: 'Educational',
   sceneDurationSeconds: 10,
-  omniSimilarityThreshold: 0.78,
   productionTemplate: DEFAULT_PRODUCTION_TEMPLATE,
-  productionTemplateName: 'Modus Assembly Visual Production Handoff',
+  productionTemplateName: 'Modus Visual Production Handoff V2',
 };
 
 interface SettingsContextType {

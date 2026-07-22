@@ -1,3 +1,5 @@
+import type { AnyVisualProductionHandoff } from './types/visualProductionV2';
+
 export type PhaseType = 1 | 2 | 3;
 export type ProjectFormatId = 'standard-lifecycle';
 export type T2VPromptProfile = 'omni-flash' | 'veo-flow';
@@ -7,17 +9,9 @@ export interface Settings {
   defaultDuration: string;
   defaultStyle: string;
   sceneDurationSeconds: 8 | 10;
-  omniSimilarityThreshold: number;
   productionTemplate?: Record<string, any>;
   productionTemplateName?: string;
   productionTemplateImportedAt?: string;
-}
-export type PromptIssueSeverity = 'error' | 'warning' | 'info';
-export interface PromptValidationIssue {
-  code: string;
-  severity: PromptIssueSeverity;
-  message: string;
-  field?: keyof OmniPromptSections | 'prompt' | 'continuity' | 'similarity';
 }
 export interface OmniPromptSections {
   cinematography: string;
@@ -28,38 +22,6 @@ export interface OmniPromptSections {
   product_state: string;
   sound: string;
   exclusions: string;
-}
-export interface PromptFieldLocks {
-  identity: boolean;
-  assemblyState: boolean;
-  camera: boolean;
-  prompt: boolean;
-  sections: Partial<Record<keyof OmniPromptSections, boolean>>;
-}
-export interface PromptRevision {
-  createdAt: string;
-  reason: 'generated' | 'manual-edit' | 'scene-regeneration' | 'section-regeneration' | 'clarity-rewrite';
-  video_prompt: string;
-  sections?: OmniPromptSections;
-}
-export interface PromptDiagnostics {
-  lifecycleStage: string;
-  productState: string;
-  environment: string;
-  shotScale: string;
-  lens: string;
-  viewpoint: string;
-  cameraBehavior: string;
-  primaryAction: string;
-  supportingAction: string;
-  componentsPresent: string[];
-  componentsAbsent: string[];
-  geometryAnchors: string[];
-  referenceAssets: string[];
-  exclusions: string[];
-  evidenceConfidence: string;
-  similarityScore: number;
-  similarSceneNumber?: number;
 }
 export interface TopicBrief {
   schema_version?: string;
@@ -124,6 +86,7 @@ export interface TopicBrief {
   };
   lifecycle_stage_count?: number | string;
   quality_control?: any;
+  _production_handoff?: AnyVisualProductionHandoff;
   environments: Array<{
     environment_id?: string;
     stage_ref?: string;
@@ -226,11 +189,6 @@ export interface T2VPrompt {
   voiceover: string;
   stock_keywords: string;
   omniSections?: OmniPromptSections;
-  diagnostics?: PromptDiagnostics;
-  validationIssues?: PromptValidationIssue[];
-  acceptedWarningCodes?: string[];
-  locks?: PromptFieldLocks;
-  revisions?: PromptRevision[];
 }
 export interface AppState {
   projectSchemaVersion: 5;
