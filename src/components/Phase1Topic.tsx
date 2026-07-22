@@ -143,6 +143,7 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
       topic: parsedBrief,
       masterVoiceoverScript: parsedBrief.master_voiceover_script || '',
       projectName: parsedBrief.topic?.product || parsedBrief.topic?.title || "Untitled",
+      plannedScenes: [], sceneDirections: [], visualPrompts: [], demoScenes: [], demoSceneNumbers: [], demoState: 'idle',
       phase: 2,
     }));
   };

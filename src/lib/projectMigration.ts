@@ -21,8 +21,12 @@ export function migrateProject(raw: any, initial: AppState, sceneDuration: 8 | 1
     transcription = resplitTranscription(transcription, sceneDuration);
     timingChanged = true;
   }
+  const rawPlan = Array.isArray(raw.plannedScenes) ? raw.plannedScenes : [];
+  const planValid = raw.projectSchemaVersion >= 6 && !!transcription && rawPlan.length === transcription.scenes.length && rawPlan.every((item:any,index:number)=>
+    item?.number===index+1&&item?.chapter_id&&item?.beat_id&&item?.visual_family&&item?.story_function&&item?.visual_treatment&&item?.product_visibility&&item?.stage_id&&item?.environment_ref
+  );
   const rawDirections = Array.isArray(raw.sceneDirections) ? raw.sceneDirections : [];
-  const directionsValid = !!transcription && validateSceneDirections(rawDirections, transcription.scenes).length === 0;
+  const directionsValid = planValid && !!transcription && validateSceneDirections(rawDirections, transcription.scenes, rawPlan).length === 0;
   const imageMode = raw.phase4Mode === 'image-animation';
   const profileSupported = raw.projectSchemaVersion >= 4 && (raw.t2vPromptProfile === 'omni-flash' || raw.t2vPromptProfile === 'veo-flow');
   const rawPrompts = Array.isArray(raw.visualPrompts) ? raw.visualPrompts : [];
@@ -57,11 +61,12 @@ export function migrateProject(raw: any, initial: AppState, sceneDuration: 8 | 1
     topic: raw.topic || null,
     masterVoiceoverScript: transcription?.text || '',
     voiceoverTranscription: transcription,
+    plannedScenes: planValid ? rawPlan : [],
     sceneDirections: directionsValid ? rawDirections : [],
     visualPrompts: preserveOutput ? compatiblePrompts.sort((a,b)=>a.number-b.number) : [],
     demoState: 'idle', demoScenes: [], demoSceneNumbers: [],
     t2vPromptProfile: profileSupported ? raw.t2vPromptProfile : 'omni-flash',
-    projectSchemaVersion: 5,
+    projectSchemaVersion: 6,
   };
   const reset = timingChanged || imageMode || !profileSupported || !directionsValid || !preserveOutput;
   return { state, message: reset && raw.topic ? 'Project migrated to the timestamped T2V pipeline; incompatible downstream output was reset.' : undefined };

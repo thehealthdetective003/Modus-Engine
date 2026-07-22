@@ -26,7 +26,7 @@ export function TranscriptionImportPanel({ state, setState }: Props) {
     if (!prev.voiceoverTranscription) return prev;
     const scenes = prev.voiceoverTranscription.scenes.map(scene => scene.number === number ? { ...scene, text, silent: !text.trim() } : scene);
     const masterVoiceoverScript = scenes.map(scene => scene.text).filter(Boolean).join(' ');
-    return { ...prev, phase: 2, masterVoiceoverScript, voiceoverTranscription: { ...prev.voiceoverTranscription, scenes, text: masterVoiceoverScript }, sceneDirections: [], visualPrompts: [], demoScenes: [], demoSceneNumbers: [], demoState: 'idle' };
+    return { ...prev, phase: 2, masterVoiceoverScript, voiceoverTranscription: { ...prev.voiceoverTranscription, scenes, text: masterVoiceoverScript }, plannedScenes: [], sceneDirections: [], visualPrompts: [], demoScenes: [], demoSceneNumbers: [], demoState: 'idle' };
   });
   return <div className="mb-8 rounded-xl border border-primary/25 bg-primary/5 p-5 space-y-4">
     <div><h3 className="font-bold tracking-widest text-sm flex items-center gap-2"><FileJson className="h-4 w-4 text-primary"/>TIMESTAMPED TRANSCRIPTION JSON</h3><p className="text-[10px] text-muted-foreground mt-1">Required · English · word-level timestamps · automatically split into {settings.sceneDurationSeconds}s scenes</p></div>

@@ -83,17 +83,20 @@ function stripInjectedClauses(value: string): string {
 }
 
 export function finalizeFlowPrompt(generated: string, direction: SceneDirection, topic: TopicBrief | null, profile: T2VPromptProfile): string {
+  if (direction.visual_treatment === 'STATIC_GRAPHIC_T2V') generated = `Create a stable unlabeled documentary technical composition with minimal parallax or a restrained light pass. ${direction.temporal_action?.opening_state || ''} ${direction.temporal_action?.mid_shot_progression || direction.primary_action} End with ${direction.temporal_action?.ending_state || 'a clean settled composition'}. Use a neutral technical space; no literal factory ambience, readable text, labels, numbers, logos, maps, interfaces, or precise generated data.`;
+  if (direction.visual_treatment === 'MOTION_GRAPHIC_T2V') generated = `Create a controlled unlabeled documentary motion graphic showing components, material layers, paths, flows, or mechanical relationships. ${direction.temporal_action?.opening_state || ''} ${direction.temporal_action?.primary_motion || direction.primary_action} ${direction.temporal_action?.mid_shot_progression || ''} End with ${direction.temporal_action?.ending_state || 'the relationship clearly resolved'}. Use restrained abstract sound design; no readable text, labels, numbers, logos, maps, interfaces, or precise generated data.`;
   const prefix = `${Number(direction.duration.toFixed(3))}-second continuous shot.`;
   const body = truncateWords(stripInjectedClauses(generated), 65);
-  const identity = direction.state === 'C'
+  const visibility=direction.product_visibility||(direction.state==='C'?'FULL':'PARTIAL');
+  const identity = visibility==='NONE' ? '' : visibility==='DETAIL_ONLY' ? truncateWords(`Show only this component detail: ${direction.required_visible_features.slice(0,2).join(', ')}`,28) : direction.state === 'C'
     ? truncateWords(compactIdentity(topic), 38)
     : truncateWords(`Show only the incomplete State ${direction.state} condition: ${direction.product_visual_state}. Do not reveal finished or future-stage components`, 28);
-  const identityClause = identity ? `${direction.state === 'C' ? 'Maintain this finished-product identity' : 'Assembly-state constraint'}: ${identity}` : '';
+  const identityClause = identity ? `${visibility==='DETAIL_ONLY'?'Component constraint':direction.state === 'C' ? 'Maintain this finished-product identity' : 'Assembly-state constraint'}: ${identity}` : '';
   const negatives = relevantNegatives(direction, topic);
   const cleanNegatives = negatives.map(value => value.replace(/^(?:no|avoid|without|do not include)\s+/i, '').trim()).filter(Boolean);
   const negativeTerms = truncateWords(cleanNegatives.join(', '), 24);
   const negativeClause = negativeTerms ? (profile === 'veo-flow' ? `Negative prompt: ${negativeTerms}` : `Exclude ${negativeTerms}`) : '';
-  const audio = profile === 'omni-flash'
+  const audio = direction.visual_treatment&&direction.visual_treatment!=='LIVE_ACTION_T2V' ? 'Use restrained synchronized abstract documentary sound. Exclude dialogue, narration, music, and readable generated text.' : profile === 'omni-flash'
     ? 'Generate realistic synchronized ambient sound. Exclude dialogue, narration, music, and readable generated text.'
     : 'Audio: realistic ambient production sound synchronized to movement.';
   return [prefix, body, identityClause, audio, negativeClause].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();

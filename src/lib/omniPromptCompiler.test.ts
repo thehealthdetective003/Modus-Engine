@@ -106,3 +106,16 @@ test('ranks exact counts, viewpoint anchors, and scene exclusions by relevance',
   assert.equal((sections.exclusions.match(/generic vehicle/gi)||[]).length,1);
   assert.match(sections.exclusions,/automatic panel closure|generic airliner geometry/i);
 });
+
+test('compiles visibility-aware static and motion graphic treatments',()=>{
+  const temporal_action={opening_state:'Separated material layers hover in alignment',primary_motion:'The layers move together along one path',physical_interaction:'Their edges align without deformation',mid_shot_progression:'The relationship becomes visually clear',ending_state:'The layers settle into one clean stack'};
+  for(const visual_treatment of ['STATIC_GRAPHIC_T2V','MOTION_GRAPHIC_T2V'] as const){
+    const fixture={...direction,visual_treatment,product_visibility:'NONE' as const,temporal_action};
+    const prompt=compileOmniPrompt(normalizeOmniSections({},fixture,topic).sections,fixture);
+    assert.match(prompt,/unlabeled documentary/i);assert.match(prompt,/neutral technical space/i);
+    assert.doesNotMatch(prompt,/Preserve the same exact KJ-600|factory ambience/i);assert.match(prompt,/readable labels/i);
+  }
+  const detail={...direction,visual_treatment:'LIVE_ACTION_T2V' as const,product_visibility:'DETAIL_ONLY' as const,temporal_action};
+  const prompt=compileOmniPrompt(normalizeOmniSections({},detail,topic).sections,detail);
+  assert.match(prompt,/Show only this component detail/i);assert.doesNotMatch(prompt,/Preserve the same exact KJ-600/i);
+});

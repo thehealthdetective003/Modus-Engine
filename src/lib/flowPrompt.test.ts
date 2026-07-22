@@ -34,3 +34,9 @@ test('Omni receives only batch-relevant handoff records while Veo remains unchan
   assert.equal(omni.authoritative_production_handoff.product.official_name,'KJ-600');
   assert.equal('authoritative_production_handoff' in buildFlowContext(scopedTopic,[direction],'veo-flow'),false);
 });
+
+test('Veo compiles graphic treatments without finished identity or factory ambience',()=>{
+  const graphic={...direction,visual_treatment:'MOTION_GRAPHIC_T2V' as const,product_visibility:'NONE' as const,temporal_action:{opening_state:'Three shapes are separated',primary_motion:'One path connects the shapes',physical_interaction:'The path meets each edge',mid_shot_progression:'The relationship resolves',ending_state:'The composition settles'}};
+  const result=finalizeFlowPrompt('ignored',graphic,topic,'veo-flow');
+  assert.match(result,/motion graphic/i);assert.doesNotMatch(result,/Maintain this finished-product identity|ambient production sound/i);assert.match(result,/no readable text/i);
+});

@@ -1,4 +1,5 @@
-import type { AnyVisualProductionHandoff } from './types/visualProductionV2';
+import type { AnyVisualProductionHandoff, ProductVisibility, StoryFunction, VisualFamily } from './types/visualProductionV2';
+export type { ProductVisibility, StoryFunction, VisualFamily } from './types/visualProductionV2';
 
 export type PhaseType = 1 | 2 | 3;
 export type ProjectFormatId = 'standard-lifecycle';
@@ -156,6 +157,25 @@ export interface VoiceoverTranscription {
   scenes: TimedScene[];
   importedAt: string;
 }
+export type VisualTreatment = 'LIVE_ACTION_T2V' | 'STATIC_GRAPHIC_T2V' | 'MOTION_GRAPHIC_T2V';
+export interface PlannedScene {
+  number: number;
+  chapter_id: string;
+  beat_id: string;
+  visual_family: VisualFamily;
+  story_function: StoryFunction;
+  visual_treatment: VisualTreatment;
+  product_visibility: ProductVisibility;
+  stage_id: string;
+  environment_ref: string;
+}
+export interface TemporalAction {
+  opening_state: string;
+  primary_motion: string;
+  physical_interaction: string;
+  mid_shot_progression: string;
+  ending_state: string;
+}
 export interface SceneDirection {
   number: number;
   start: number;
@@ -163,6 +183,12 @@ export interface SceneDirection {
   duration: number;
   voiceover: string;
   silent: boolean;
+  chapter_id?: string;
+  beat_id?: string;
+  visual_family?: VisualFamily;
+  story_function?: StoryFunction;
+  visual_treatment?: VisualTreatment;
+  product_visibility?: ProductVisibility;
   stage_id: string;
   state: 'A' | 'B' | 'C';
   subject: string;
@@ -177,6 +203,7 @@ export interface SceneDirection {
   transition_to_next: string;
   required_visible_features: string[];
   forbidden_elements: string[];
+  temporal_action?: TemporalAction;
 }
 export interface T2VPrompt {
   number: number;
@@ -191,12 +218,13 @@ export interface T2VPrompt {
   omniSections?: OmniPromptSections;
 }
 export interface AppState {
-  projectSchemaVersion: 5;
+  projectSchemaVersion: number;
   id?: string;
   projectName: string;
   projectFormat: ProjectFormatId;
   phase: PhaseType;
   topic: TopicBrief | null;
+  plannedScenes: PlannedScene[];
   sceneDirections: SceneDirection[];
   masterVoiceoverScript: string;
   voiceoverTranscription: VoiceoverTranscription | null;

@@ -72,7 +72,7 @@ export function resolveProductionScene(topic: TopicBrief | null, direction: Scen
   const stages=Array.isArray(handoff.production_stages)?handoff.production_stages:[];
   const stage=stages.find((item:any)=>item.stage_id===direction.stage_id) || {};
   const environments=Array.isArray(handoff.environments)?handoff.environments:[];
-  const environment=environments.find((item:any)=>item.environment_id===(stage.environment_id||direction.environment_ref)) || {};
+  const environment=environments.find((item:any)=>item.environment_id===direction.environment_ref) || {};
   const modules=Array.isArray(handoff.geometry_modules)?handoff.geometry_modules:[];
   const moduleIds=[stage.geometry_control?.primary_geometry_module_id,...(stage.geometry_control?.secondary_geometry_module_ids||[])].filter(Boolean);
   const geometryModules=modules.filter((item:any)=>moduleIds.includes(item.module_id));
@@ -171,10 +171,12 @@ function stateSentence(direction:SceneDirection,resolved:ResolvedProductionScene
 
 export function normalizeOmniSections(raw:any,direction:SceneDirection,topic:TopicBrief|null):{sections:OmniPromptSections;resolved:ResolvedProductionScene} {
   const resolved=resolveProductionScene(topic,direction);
+  const treatment=direction.visual_treatment||'LIVE_ACTION_T2V';
+  const visibility=direction.product_visibility||(direction.state==='C'?'FULL':'PARTIAL');
   const inferred=resolved.inferred.length&&cleanSpace(direction.environment_description).length<45?`Use a plausible non-identifying production environment; do not invent proprietary internal layouts`:'';
   const factory=/factory|assembly|production|hangar|workshop/i.test(`${direction.environment_description} ${resolved.environment?.facility_type||''}`);
   const carrier=/carrier|maritime|deck/i.test(direction.environment_description);
-  const sound=carrier?'Generate synchronized maritime deck ambience with wind, distant machinery, restrained deck-equipment movement, and physically matched mechanical sound':factory?'Generate synchronized factory ambience with distant ventilation, restrained machinery hum, soft tool contact, and subtle footsteps':'Generate realistic synchronized environmental and mechanical ambience appropriate to the visible action';
+  const sound=treatment!=='LIVE_ACTION_T2V'?'Use restrained abstract documentary sound design synchronized only to the visible graphic motion':carrier?'Generate synchronized maritime deck ambience with wind, distant machinery, restrained deck-equipment movement, and physically matched mechanical sound':factory?'Generate synchronized factory ambience with distant ventilation, restrained machinery hum, soft tool contact, and subtle footsteps':'Generate realistic synchronized environmental and mechanical ambience appropriate to the visible action';
   const rawSubject=cleanSpace(raw?.subject)||direction.subject;
   const rawEnvironment=cleanSpace(raw?.environment)||direction.environment_description;
   const rawStyle=cleanSpace(raw?.style_lighting)||direction.lighting_and_material;
@@ -191,15 +193,20 @@ export function normalizeOmniSections(raw:any,direction:SceneDirection,topic:Top
   const cleanExclusions=preferSpecific(rankedUnique(exclusionCandidates,7).map(negativeTerm).filter(Boolean),6);
   const speedAlreadyExpressed=resolved.camera.speed==='slow'&&resolved.camera.behavior.startsWith('slow ');
   const speedClause=resolved.camera.speed&&resolved.camera.behavior!=='locked camera'&&!speedAlreadyExpressed?` at ${resolved.camera.speed} speed`:'';
+  const temporal=direction.temporal_action;
+  const temporalAction=temporal?`${temporal.opening_state}. ${temporal.primary_motion}; ${temporal.physical_interaction}. Mid-shot, ${temporal.mid_shot_progression}. End with ${temporal.ending_state}`:cleanSpace(raw?.action)||direction.primary_action;
+  const moduleIdentity=preferSpecific(resolved.identity,2);
+  const productState=visibility==='NONE'?'':visibility==='DETAIL_ONLY'?(moduleIdentity.length?sentence(`Show only this component detail: ${naturalList(moduleIdentity)}`):sentence(direction.product_visual_state)):visibility==='FULL'?[canonicalIdentitySignature(topic),viewpointIdentitySentence(resolved)].filter(Boolean).join(' '):stateSentence(direction,resolved,topic);
+  const graphicSubject=treatment==='STATIC_GRAPHIC_T2V'?'An unlabeled documentary technical composition of clean geometric forms and material layers':treatment==='MOTION_GRAPHIC_T2V'?'An unlabeled documentary motion graphic of components, paths, layers, and mechanical relationships':'';
   const sections:OmniPromptSections={
-    cinematography:`Use a ${resolved.camera.shotScale} ${resolved.camera.viewpoint} view on a ${resolved.camera.lens} lens, with one ${resolved.camera.behavior}${speedClause}`,
-    subject:/\b(?:is|are|stands|sits|rests|remains|appears|moves|shows)\b/i.test(rawSubject)?rawSubject:`The scene shows ${rawSubject}`,
-    action:cleanSpace(raw?.action)||direction.primary_action,
-    environment:[/\b(?:is|are|inside|within|across|on the|in the)\b/i.test(rawEnvironment)?rawEnvironment:`Set the shot in ${rawEnvironment}`,inferred].filter(Boolean).join('. '),
-    style_lighting:/^(?:use|render|light|keep)\b/i.test(rawStyle)?rawStyle:`Use ${rawStyle}`,
-    product_state:direction.state==='C'?[canonicalIdentitySignature(topic),viewpointIdentitySentence(resolved)].filter(Boolean).join(' '):stateSentence(direction,resolved,topic),
+    cinematography:treatment==='STATIC_GRAPHIC_T2V'?'Use a stable orthographic documentary composition with only minimal parallax and a restrained light pass':treatment==='MOTION_GRAPHIC_T2V'?'Use a stable technical viewpoint with one controlled graphic camera drift':`Use a ${resolved.camera.shotScale} ${resolved.camera.viewpoint} view on a ${resolved.camera.lens} lens, with one ${resolved.camera.behavior}${speedClause}`,
+    subject:graphicSubject||(/\b(?:is|are|stands|sits|rests|remains|appears|moves|shows)\b/i.test(rawSubject)?rawSubject:`The scene shows ${rawSubject}`),
+    action:temporalAction,
+    environment:treatment==='LIVE_ACTION_T2V'?[/\b(?:is|are|inside|within|across|on the|in the)\b/i.test(rawEnvironment)?rawEnvironment:`Set the shot in ${rawEnvironment}`,inferred].filter(Boolean).join('. '):'Use a clean neutral technical space with no literal factory set, map, interface, or readable annotation',
+    style_lighting:treatment==='LIVE_ACTION_T2V'?(/^(?:use|render|light|keep)\b/i.test(rawStyle)?rawStyle:`Use ${rawStyle}`):'Use restrained documentary colors, precise edges, controlled depth, and physically plausible material shading',
+    product_state:productState,
     sound,
-    exclusions:naturalList(cleanExclusions),
+    exclusions:naturalList(uniqueStrings([cleanExclusions,treatment!=='LIVE_ACTION_T2V'?['readable labels','numbers','logos','maps','fake user interfaces','precise generated data']:[],visibility==='NONE'?['the finished product or product silhouette']:[]])),
   };
   return {sections,resolved};
 }
