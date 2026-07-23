@@ -6,6 +6,14 @@ const requiredStrings: Array<keyof SceneDirection> = [
   'continuity_from_previous', 'transition_to_next',
 ];
 
+export function ensureRequiredVisibleFeatures(item:any, plan?:PlannedScene):string[]{
+  const supplied=Array.isArray(item?.required_visible_features)?item.required_visible_features.map(String).map((value:string)=>value.trim()).filter(Boolean):[];
+  if(supplied.length)return supplied;
+  if(plan?.visual_treatment==='STATIC_GRAPHIC_T2V'||plan?.visual_treatment==='MOTION_GRAPHIC_T2V')return ['unlabeled conceptual geometry and spatial relationships'];
+  if(plan?.product_visibility==='NONE')return [String(item?.environment_description||item?.temporal_action?.opening_state||item?.subject||plan.visual_family.replaceAll('_',' ')).trim()].filter(Boolean);
+  return [String(item?.subject||item?.product_visual_state||'assigned scene subject').trim()].filter(Boolean);
+}
+
 export function mergeDirectionMetadata(generated: any[], timedScenes: TimedScene[], plannedScenes: PlannedScene[] = []): SceneDirection[] {
   const byNumber = new Map(generated.map(item => [Number(item?.number), item]));
   const planByNumber = new Map(plannedScenes.map(item => [item.number, item]));
@@ -17,10 +25,10 @@ export function mergeDirectionMetadata(generated: any[], timedScenes: TimedScene
       voiceover: timed.text, silent: timed.silent,
       chapter_id: plan?.chapter_id || '', beat_id: plan?.beat_id || '', visual_family: plan?.visual_family,
       story_function: plan?.story_function, visual_treatment: plan?.visual_treatment,
-      product_visibility: plan?.product_visibility, stage_id: plan?.stage_id || String(item.stage_id || ''), state: item.state,
+      product_visibility: plan?.product_visibility, stage_id: plan?.stage_id || String(item.stage_id || ''), state: plan?.state || String(item.state||'').toUpperCase().replace(/^STATE[_\s-]*/,'') as 'A'|'B'|'C',
       subject: String(item.subject || ''), product_visual_state: String(item.product_visual_state || ''),
       primary_action: String(item.primary_action || ''), supporting_motion: String(item.supporting_motion || ''),
-      environment_ref: String(item.environment_ref || ''), environment_description: String(item.environment_description || ''),
+      environment_ref: plan?.environment_ref || String(item.environment_ref || ''), environment_description: String(item.environment_description || ''),
       camera: {
         shot_scale: String(item.camera?.shot_scale || ''), lens: String(item.camera?.lens || ''),
         angle: String(item.camera?.angle || ''), movement: String(item.camera?.movement || ''),
@@ -28,7 +36,7 @@ export function mergeDirectionMetadata(generated: any[], timedScenes: TimedScene
       },
       lighting_and_material: String(item.lighting_and_material || ''),
       continuity_from_previous: String(item.continuity_from_previous || ''), transition_to_next: String(item.transition_to_next || ''),
-      required_visible_features: Array.isArray(item.required_visible_features) ? item.required_visible_features.map(String) : [],
+      required_visible_features: ensureRequiredVisibleFeatures(item,plan),
       forbidden_elements: Array.isArray(item.forbidden_elements) ? item.forbidden_elements.map(String) : [],
       temporal_action: {
         opening_state: String(item.temporal_action?.opening_state || ''), primary_motion: String(item.temporal_action?.primary_motion || ''),
@@ -55,13 +63,13 @@ export function validateSceneDirections(directions: unknown, timedScenes: TimedS
     if (Math.abs(Number(direction.start) - timed.start) > 0.001 || Math.abs(Number(direction.end) - timed.end) > 0.001 || Math.abs(Number(direction.duration) - timed.duration) > 0.001) errors.push(`${label}: timing metadata was modified.`);
     if (String(direction.voiceover ?? '') !== timed.text || Boolean(direction.silent) !== timed.silent) errors.push(`${label}: imported VO or silence metadata was modified.`);
     const plan = plannedScenes?.find(item => item.number === number);
-    if (plan) (['chapter_id','beat_id','visual_family','story_function','visual_treatment','product_visibility','stage_id'] as const).forEach(field => {
+    if (plan) (['chapter_id','beat_id','visual_family','story_function','visual_treatment','product_visibility','stage_id','state'] as const).forEach(field => {
       if (direction[field] !== plan[field]) errors.push(`${label}: immutable plan field ${field} was modified.`);
     });
     if (!['A', 'B', 'C'].includes(direction.state)) errors.push(`${label}: state must be A, B, or C.`);
     requiredStrings.forEach(field => { if (!String(direction[field] || '').trim()) errors.push(`${label}: ${field} is required.`); });
     ['shot_scale', 'lens', 'angle', 'movement', 'movement_speed'].forEach(field => { if (!String(direction.camera?.[field] || '').trim()) errors.push(`${label}: camera.${field} is required.`); });
-    if (!Array.isArray(direction.required_visible_features) || direction.required_visible_features.length === 0) errors.push(`${label}: required_visible_features must contain at least one item.`);
+    if (!Array.isArray(direction.required_visible_features) || (direction.product_visibility!=='NONE'&&direction.required_visible_features.length===0)) errors.push(`${label}: required_visible_features must contain at least one item.`);
     if (!Array.isArray(direction.forbidden_elements) || direction.forbidden_elements.length === 0) errors.push(`${label}: forbidden_elements must contain at least one item.`);
     if (plannedScenes) ['opening_state','primary_motion','physical_interaction','mid_shot_progression','ending_state'].forEach(field => { if (!String(direction.temporal_action?.[field] || '').trim()) errors.push(`${label}: temporal_action.${field} is required.`); });
   });

@@ -173,10 +173,12 @@ export function normalizeOmniSections(raw:any,direction:SceneDirection,topic:Top
   const resolved=resolveProductionScene(topic,direction);
   const treatment=direction.visual_treatment||'LIVE_ACTION_T2V';
   const visibility=direction.product_visibility||(direction.state==='C'?'FULL':'PARTIAL');
+  const operational=['OPERATIONAL_CONTEXT','DYNAMIC_TESTING','DELIVERY_AND_ROLLOUT'].includes(direction.visual_family||'');
+  const productClass=`${(topic as any)?._production_handoff?.product?.product_class||''} ${productName(topic)} ${direction.primary_action}`.toLowerCase();
   const inferred=resolved.inferred.length&&cleanSpace(direction.environment_description).length<45?`Use a plausible non-identifying production environment; do not invent proprietary internal layouts`:'';
   const factory=/factory|assembly|production|hangar|workshop/i.test(`${direction.environment_description} ${resolved.environment?.facility_type||''}`);
   const carrier=/carrier|maritime|deck/i.test(direction.environment_description);
-  const sound=treatment!=='LIVE_ACTION_T2V'?'Use restrained abstract documentary sound design synchronized only to the visible graphic motion':carrier?'Generate synchronized maritime deck ambience with wind, distant machinery, restrained deck-equipment movement, and physically matched mechanical sound':factory?'Generate synchronized factory ambience with distant ventilation, restrained machinery hum, soft tool contact, and subtle footsteps':'Generate realistic synchronized environmental and mechanical ambience appropriate to the visible action';
+  const sound=treatment!=='LIVE_ACTION_T2V'?'Use restrained abstract documentary sound design synchronized only to the visible graphic motion':operational&&/helicopter|rotorcraft|rotor/.test(productClass)?'Generate synchronized rotor, engine, airflow, and environmental sound, including physically matched downwash where visible':operational&&/aircraft|airplane|fighter|jet|uas|uav|drone/.test(productClass)?'Generate synchronized propulsion, airflow, wind, and control-surface sound appropriate to the maneuver':carrier?'Generate synchronized maritime deck ambience with wind, distant machinery, restrained deck-equipment movement, and physically matched mechanical sound':factory?'Generate synchronized factory ambience with distant ventilation, restrained machinery hum, soft tool contact, and subtle footsteps':'Generate realistic synchronized environmental and mechanical ambience appropriate to the visible action';
   const rawSubject=cleanSpace(raw?.subject)||direction.subject;
   const rawEnvironment=cleanSpace(raw?.environment)||direction.environment_description;
   const rawStyle=cleanSpace(raw?.style_lighting)||direction.lighting_and_material;
@@ -206,7 +208,7 @@ export function normalizeOmniSections(raw:any,direction:SceneDirection,topic:Top
     style_lighting:treatment==='LIVE_ACTION_T2V'?(/^(?:use|render|light|keep)\b/i.test(rawStyle)?rawStyle:`Use ${rawStyle}`):'Use restrained documentary colors, precise edges, controlled depth, and physically plausible material shading',
     product_state:productState,
     sound,
-    exclusions:naturalList(uniqueStrings([cleanExclusions,treatment!=='LIVE_ACTION_T2V'?['readable labels','numbers','logos','maps','fake user interfaces','precise generated data']:[],visibility==='NONE'?['the finished product or product silhouette']:[]])),
+    exclusions:naturalList(uniqueStrings([cleanExclusions,treatment!=='LIVE_ACTION_T2V'?['readable labels','numbers','logos','maps','fake user interfaces','precise generated data']:[],visibility==='NONE'?['the finished product or product silhouette']:[],operational?['weapon discharge','explosions or active combat','impossible aerobatics','changing product configuration','invented unit markings','exact event recreation','identifiable location claims']:[]])),
   };
   return {sections,resolved};
 }

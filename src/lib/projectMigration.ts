@@ -1,6 +1,7 @@
 import { AppState, T2VPrompt } from '../types';
 import { resplitTranscription } from './timedTranscript';
-import { validateSceneDirections } from './sceneDirections';
+import { ensureRequiredVisibleFeatures, validateSceneDirections } from './sceneDirections';
+import { resolvePlannedState } from './scenePlanner';
 
 export type MigrationResult = { state: AppState | null; message?: string; error?: string };
 
@@ -21,12 +22,17 @@ export function migrateProject(raw: any, initial: AppState, sceneDuration: 8 | 1
     transcription = resplitTranscription(transcription, sceneDuration);
     timingChanged = true;
   }
-  const rawPlan = Array.isArray(raw.plannedScenes) ? raw.plannedScenes : [];
+  const rawPlan = Array.isArray(raw.plannedScenes) ? raw.plannedScenes.map((item:any)=>({...item,state:resolvePlannedState(raw.topic,item?.stage_id,item?.product_visibility)})) : [];
   const planValid = raw.projectSchemaVersion >= 6 && !!transcription && rawPlan.length === transcription.scenes.length && rawPlan.every((item:any,index:number)=>
-    item?.number===index+1&&item?.chapter_id&&item?.beat_id&&item?.visual_family&&item?.story_function&&item?.visual_treatment&&item?.product_visibility&&item?.stage_id&&item?.environment_ref
+    item?.number===index+1&&item?.chapter_id&&item?.beat_id&&item?.visual_family&&item?.story_function&&item?.visual_treatment&&item?.product_visibility&&item?.stage_id&&item?.environment_ref&&['A','B','C'].includes(item?.state)
   );
   const rawDirections = Array.isArray(raw.sceneDirections) ? raw.sceneDirections : [];
-  const directionsValid = planValid && !!transcription && validateSceneDirections(rawDirections, transcription.scenes, rawPlan).length === 0;
+  const planByNumber = new Map(rawPlan.map((item:any)=>[Number(item.number),item]));
+  const repairedDirections = planValid ? rawDirections.map((item:any)=>{
+    const plan:any=planByNumber.get(Number(item?.number));
+    return plan ? {...item,chapter_id:plan.chapter_id,beat_id:plan.beat_id,visual_family:plan.visual_family,story_function:plan.story_function,visual_treatment:plan.visual_treatment,product_visibility:plan.product_visibility,stage_id:plan.stage_id,environment_ref:plan.environment_ref,state:plan.state,required_visible_features:ensureRequiredVisibleFeatures(item,plan)} : item;
+  }) : rawDirections;
+  const directionsValid = planValid && !!transcription && validateSceneDirections(repairedDirections, transcription.scenes, rawPlan).length === 0;
   const imageMode = raw.phase4Mode === 'image-animation';
   const profileSupported = raw.projectSchemaVersion >= 4 && (raw.t2vPromptProfile === 'omni-flash' || raw.t2vPromptProfile === 'veo-flow');
   const rawPrompts = Array.isArray(raw.visualPrompts) ? raw.visualPrompts : [];
@@ -62,7 +68,7 @@ export function migrateProject(raw: any, initial: AppState, sceneDuration: 8 | 1
     masterVoiceoverScript: transcription?.text || '',
     voiceoverTranscription: transcription,
     plannedScenes: planValid ? rawPlan : [],
-    sceneDirections: directionsValid ? rawDirections : [],
+    sceneDirections: directionsValid ? repairedDirections : [],
     visualPrompts: preserveOutput ? compatiblePrompts.sort((a,b)=>a.number-b.number) : [],
     demoState: 'idle', demoScenes: [], demoSceneNumbers: [],
     t2vPromptProfile: profileSupported ? raw.t2vPromptProfile : 'omni-flash',

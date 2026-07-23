@@ -40,3 +40,10 @@ test('Veo compiles graphic treatments without finished identity or factory ambie
   const result=finalizeFlowPrompt('ignored',graphic,topic,'veo-flow');
   assert.match(result,/motion graphic/i);assert.doesNotMatch(result,/Maintain this finished-product identity|ambient production sound/i);assert.match(result,/no readable text/i);
 });
+
+test('Veo operational prompts include aircraft motion safeguards and synchronized sound',()=>{
+  const operational={...direction,visual_family:'DYNAMIC_TESTING' as const,visual_treatment:'LIVE_ACTION_T2V' as const,product_visibility:'FULL' as const,primary_action:'The fighter aircraft performs a controlled banked transit'};
+  const localTopic={...topic,_production_handoff:{product:{product_class:'fighter aircraft'}}} as any;
+  const result=finalizeFlowPrompt('The aircraft enters a smooth bank while a long-lens camera tracks from the ground.',operational,localTopic,'veo-flow');
+  assert.match(result,/propulsion, airflow, wind, and control-surface sound/i);assert.match(result,/weapon discharge/i);assert.match(result,/impossible aerobatics/i);
+});

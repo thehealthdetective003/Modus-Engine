@@ -32,8 +32,10 @@ export function compactIdentity(topic: TopicBrief | null): string {
 }
 
 export function relevantNegatives(direction: SceneDirection, topic: TopicBrief | null): string[] {
+  const operational=['OPERATIONAL_CONTEXT','DYNAMIC_TESTING','DELIVERY_AND_ROLLOUT'].includes(direction.visual_family||'');
   return normalizeConstraintList([
     direction.forbidden_elements,
+    operational?['weapon discharge','explosions or active combat','impossible aerobatics','changing product configuration','invented unit markings','exact event recreation','identifiable location claims']:[],
     topic?.visual_exclusions,
     topic?.negative_prompt_global,
     topic?.global_negative_prompts,
@@ -96,7 +98,10 @@ export function finalizeFlowPrompt(generated: string, direction: SceneDirection,
   const cleanNegatives = negatives.map(value => value.replace(/^(?:no|avoid|without|do not include)\s+/i, '').trim()).filter(Boolean);
   const negativeTerms = truncateWords(cleanNegatives.join(', '), 24);
   const negativeClause = negativeTerms ? (profile === 'veo-flow' ? `Negative prompt: ${negativeTerms}` : `Exclude ${negativeTerms}`) : '';
-  const audio = direction.visual_treatment&&direction.visual_treatment!=='LIVE_ACTION_T2V' ? 'Use restrained synchronized abstract documentary sound. Exclude dialogue, narration, music, and readable generated text.' : profile === 'omni-flash'
+  const operational=['OPERATIONAL_CONTEXT','DYNAMIC_TESTING','DELIVERY_AND_ROLLOUT'].includes(direction.visual_family||'');
+  const productClass=`${(topic as any)?._production_handoff?.product?.product_class||''} ${topic?.topic?.product||''} ${direction.primary_action}`.toLowerCase();
+  const operationalAudio=/helicopter|rotorcraft|rotor/.test(productClass)?'Generate synchronized rotor, engine, airflow, wind, and visible downwash sound.':/aircraft|airplane|fighter|jet|uas|uav|drone/.test(productClass)?'Generate synchronized propulsion, airflow, wind, and control-surface sound.':'Generate synchronized propulsion and environmental sound appropriate to the visible operation.';
+  const audio = direction.visual_treatment&&direction.visual_treatment!=='LIVE_ACTION_T2V' ? 'Use restrained synchronized abstract documentary sound. Exclude dialogue, narration, music, and readable generated text.' : operational ? `${operationalAudio} Exclude dialogue, narration, and music.` : profile === 'omni-flash'
     ? 'Generate realistic synchronized ambient sound. Exclude dialogue, narration, music, and readable generated text.'
     : 'Audio: realistic ambient production sound synchronized to movement.';
   return [prefix, body, identityClause, audio, negativeClause].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();

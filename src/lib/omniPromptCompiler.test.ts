@@ -119,3 +119,11 @@ test('compiles visibility-aware static and motion graphic treatments',()=>{
   const prompt=compileOmniPrompt(normalizeOmniSections({},detail,topic).sections,detail);
   assert.match(prompt,/Show only this component detail/i);assert.doesNotMatch(prompt,/Preserve the same exact KJ-600/i);
 });
+
+test('compiles aircraft operational footage with physical sound and safety guards',()=>{
+  const operationalTopic={...topic,_production_handoff:{...handoff,product:{...handoff.product,product_class:'combat helicopter'}}} as any;
+  const temporal_action={opening_state:'The complete helicopter holds a low hover',primary_motion:'It accelerates into a shallow bank',physical_interaction:'Rotor downwash pushes dust outward across the apron',mid_shot_progression:'The aircraft gains forward speed without changing configuration',ending_state:'It settles into stable level transit'};
+  const fixture={...direction,state:'C' as const,visual_family:'OPERATIONAL_CONTEXT' as const,visual_treatment:'LIVE_ACTION_T2V' as const,product_visibility:'FULL' as const,primary_action:'The helicopter performs one controlled flight drill',temporal_action};
+  const prompt=compileOmniPrompt(normalizeOmniSections({},fixture,operationalTopic).sections,fixture);
+  assert.match(prompt,/rotor, engine, airflow/i);assert.match(prompt,/downwash/i);assert.match(prompt,/weapon discharge/i);assert.match(prompt,/impossible aerobatics/i);assert.equal((prompt.match(/10-second continuous shot/gi)||[]).length,1);
+});

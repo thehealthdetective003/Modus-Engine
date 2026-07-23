@@ -168,6 +168,7 @@ export interface PlannedScene {
   product_visibility: ProductVisibility;
   stage_id: string;
   environment_ref: string;
+  state: 'A' | 'B' | 'C';
 }
 export interface TemporalAction {
   opening_state: string;
