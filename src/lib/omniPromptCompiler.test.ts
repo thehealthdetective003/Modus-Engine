@@ -120,10 +120,19 @@ test('compiles visibility-aware static and motion graphic treatments',()=>{
   assert.match(prompt,/Show only this component detail/i);assert.doesNotMatch(prompt,/Preserve the same exact KJ-600/i);
 });
 
+test('compiles a complete text-free vector graphic with limited motion and a final hold',()=>{
+  const graphic_spec={graphic_subtype:'HEAT_OR_ENERGY_FLOW' as const,visual_claim:'Show airflow progressing through one stable engine cross-section',composition:'ORTHOGRAPHIC_CUTAWAY' as const,motion_pattern:'HEAT_ZONE_PROGRESSION' as const,annotation_devices:['FLOW_LINES' as const,'COLORED_ZONE' as const],palette_profile:'PREMIUM_TECHNICAL_VECTOR' as const,maximum_animated_elements:2 as const,transition_anchor:'centered flow boundary',text_policy:'NO_GENERATED_TEXT' as const};
+  const fixture={...direction,visual_treatment:'MOTION_GRAPHIC_T2V' as const,product_visibility:'DETAIL_ONLY' as const,graphic_spec};
+  const prompt=compileOmniPrompt(normalizeOmniSections({},fixture,topic).sections,fixture);
+  assert.match(prompt,/premium technical vector explainer/i);assert.match(prompt,/cool-to-warm energy zone/i);assert.match(prompt,/final quarter/i);
+  assert.match(prompt,/blank label cards or editor placeholders/i);assert.match(prompt,/photorealistic or cinematic 3D materials/i);
+  assert.doesNotMatch(prompt,/add text later|editor-added typography|factory ambience/i);assert.equal((prompt.match(/10-second continuous shot/gi)||[]).length,1);
+});
+
 test('compiles aircraft operational footage with physical sound and safety guards',()=>{
   const operationalTopic={...topic,_production_handoff:{...handoff,product:{...handoff.product,product_class:'combat helicopter'}}} as any;
   const temporal_action={opening_state:'The complete helicopter holds a low hover',primary_motion:'It accelerates into a shallow bank',physical_interaction:'Rotor downwash pushes dust outward across the apron',mid_shot_progression:'The aircraft gains forward speed without changing configuration',ending_state:'It settles into stable level transit'};
-  const fixture={...direction,state:'C' as const,visual_family:'OPERATIONAL_CONTEXT' as const,visual_treatment:'LIVE_ACTION_T2V' as const,product_visibility:'FULL' as const,primary_action:'The helicopter performs one controlled flight drill',temporal_action};
+  const fixture={...direction,state:'C' as const,visual_family:'OPERATIONAL_CONTEXT' as const,visual_treatment:'LIVE_ACTION_T2V' as const,product_visibility:'FULL' as const,primary_action:'The helicopter performs one controlled flight drill',showdown_role:'ENVIRONMENTAL_SPECTACLE' as const,energy_level:'HIGH' as const,camera_platform:'CHASE_AIRCRAFT' as const,temporal_action};
   const prompt=compileOmniPrompt(normalizeOmniSections({},fixture,operationalTopic).sections,fixture);
-  assert.match(prompt,/rotor, engine, airflow/i);assert.match(prompt,/downwash/i);assert.match(prompt,/weapon discharge/i);assert.match(prompt,/impossible aerobatics/i);assert.equal((prompt.match(/10-second continuous shot/gi)||[]).length,1);
+  assert.match(prompt,/rotor, engine, airflow/i);assert.match(prompt,/downwash/i);assert.match(prompt,/weapon discharge/i);assert.match(prompt,/impossible aerobatics/i);assert.match(prompt,/physically credible chase aircraft/i);assert.match(prompt,/physically caused cloud, vapor, heat haze/i);assert.match(prompt,/camera passing through the aircraft/i);assert.equal((prompt.match(/10-second continuous shot/gi)||[]).length,1);
 });

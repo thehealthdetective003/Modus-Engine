@@ -1,7 +1,7 @@
 import { AppState, T2VPrompt } from '../types';
 import { resplitTranscription } from './timedTranscript';
 import { ensureRequiredVisibleFeatures, validateSceneDirections } from './sceneDirections';
-import { resolvePlannedState } from './scenePlanner';
+import { deriveGraphicSceneSpec, resolvePlannedState } from './scenePlanner';
 
 export type MigrationResult = { state: AppState | null; message?: string; error?: string };
 
@@ -22,15 +22,28 @@ export function migrateProject(raw: any, initial: AppState, sceneDuration: 8 | 1
     transcription = resplitTranscription(transcription, sceneDuration);
     timingChanged = true;
   }
-  const rawPlan = Array.isArray(raw.plannedScenes) ? raw.plannedScenes.map((item:any)=>({...item,state:resolvePlannedState(raw.topic,item?.stage_id,item?.product_visibility)})) : [];
-  const planValid = raw.projectSchemaVersion >= 6 && !!transcription && rawPlan.length === transcription.scenes.length && rawPlan.every((item:any,index:number)=>
+  const rawPlan = Array.isArray(raw.plannedScenes) ? raw.plannedScenes.map((item:any,index:number)=>{
+    const base={...item,state:resolvePlannedState(raw.topic,item?.stage_id,item?.product_visibility)};
+    const timed=transcription?.scenes?.[index];
+    return {...base,graphic_spec:item?.graphic_spec??(timed?deriveGraphicSceneSpec(raw.topic,timed,base):null)};
+  }) : [];
+  const showdownRoles=['ANTICIPATION','GROUND_REVEAL','HUMAN_SCALE','PREPARATION','DEPARTURE','AIRBORNE_ESTABLISHMENT','PERFORMANCE_PASS','COCKPIT_IMMERSION','ENVIRONMENTAL_SPECTACLE','OPERATIONAL_RESET','SECOND_PEAK','CONTROLLED_RETURN'];
+  const cameraPlatforms=['GROUND_TRIPOD','GROUND_HANDHELD','RUNWAY_LONG_LENS','DISTANT_OBSERVATION','CHASE_AIRCRAFT','COCKPIT_MOUNTED','CANOPY_SIDE','VEHICLE_OR_DECK_MOUNTED'];
+  const graphicSubtypes=['COMPONENT_HIGHLIGHT','TECHNICAL_CUTAWAY','PROCESS_FLOW','MECHANICAL_RELATIONSHIP','LAYER_EXPLANATION','SCALE_COMPARISON','SENSOR_SIGNAL','HEAT_OR_ENERGY_FLOW','FACTORY_SCHEMATIC','SYMBOLIC_LOCATION','CONCEPTUAL_TRANSITION'];
+  const graphicSpecValid=(item:any)=>item?.graphic_spec===null||(
+    graphicSubtypes.includes(item?.graphic_spec?.graphic_subtype)&&item?.graphic_spec?.visual_claim&&item?.graphic_spec?.composition&&item?.graphic_spec?.motion_pattern
+    &&Array.isArray(item?.graphic_spec?.annotation_devices)&&[1,2,3].includes(item?.graphic_spec?.maximum_animated_elements)&&item?.graphic_spec?.text_policy==='NO_GENERATED_TEXT'
+  );
+  const planValid = raw.projectSchemaVersion >= 7 && !!transcription && rawPlan.length === transcription.scenes.length && rawPlan.every((item:any,index:number)=>
     item?.number===index+1&&item?.chapter_id&&item?.beat_id&&item?.visual_family&&item?.story_function&&item?.visual_treatment&&item?.product_visibility&&item?.stage_id&&item?.environment_ref&&['A','B','C'].includes(item?.state)
+    &&(item?.showdown_role===null||showdownRoles.includes(item?.showdown_role))&&['LOW','MEDIUM','HIGH'].includes(item?.energy_level)
+    &&(item?.camera_platform===null||cameraPlatforms.includes(item?.camera_platform))&&graphicSpecValid(item)
   );
   const rawDirections = Array.isArray(raw.sceneDirections) ? raw.sceneDirections : [];
   const planByNumber = new Map(rawPlan.map((item:any)=>[Number(item.number),item]));
   const repairedDirections = planValid ? rawDirections.map((item:any)=>{
     const plan:any=planByNumber.get(Number(item?.number));
-    return plan ? {...item,chapter_id:plan.chapter_id,beat_id:plan.beat_id,visual_family:plan.visual_family,story_function:plan.story_function,visual_treatment:plan.visual_treatment,product_visibility:plan.product_visibility,stage_id:plan.stage_id,environment_ref:plan.environment_ref,state:plan.state,required_visible_features:ensureRequiredVisibleFeatures(item,plan)} : item;
+    return plan ? {...item,chapter_id:plan.chapter_id,beat_id:plan.beat_id,visual_family:plan.visual_family,story_function:plan.story_function,visual_treatment:plan.visual_treatment,product_visibility:plan.product_visibility,showdown_role:plan.showdown_role,energy_level:plan.energy_level,camera_platform:plan.camera_platform,graphic_spec:plan.graphic_spec,stage_id:plan.stage_id,environment_ref:plan.environment_ref,state:plan.state,required_visible_features:ensureRequiredVisibleFeatures(item,plan)} : item;
   }) : rawDirections;
   const directionsValid = planValid && !!transcription && validateSceneDirections(repairedDirections, transcription.scenes, rawPlan).length === 0;
   const imageMode = raw.phase4Mode === 'image-animation';
@@ -72,7 +85,7 @@ export function migrateProject(raw: any, initial: AppState, sceneDuration: 8 | 1
     visualPrompts: preserveOutput ? compatiblePrompts.sort((a,b)=>a.number-b.number) : [],
     demoState: 'idle', demoScenes: [], demoSceneNumbers: [],
     t2vPromptProfile: profileSupported ? raw.t2vPromptProfile : 'omni-flash',
-    projectSchemaVersion: 6,
+    projectSchemaVersion: 8,
   };
   const reset = timingChanged || imageMode || !profileSupported || !directionsValid || !preserveOutput;
   return { state, message: reset && raw.topic ? 'Project migrated to the timestamped T2V pipeline; incompatible downstream output was reset.' : undefined };

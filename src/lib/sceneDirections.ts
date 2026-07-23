@@ -25,7 +25,10 @@ export function mergeDirectionMetadata(generated: any[], timedScenes: TimedScene
       voiceover: timed.text, silent: timed.silent,
       chapter_id: plan?.chapter_id || '', beat_id: plan?.beat_id || '', visual_family: plan?.visual_family,
       story_function: plan?.story_function, visual_treatment: plan?.visual_treatment,
-      product_visibility: plan?.product_visibility, stage_id: plan?.stage_id || String(item.stage_id || ''), state: plan?.state || String(item.state||'').toUpperCase().replace(/^STATE[_\s-]*/,'') as 'A'|'B'|'C',
+      product_visibility: plan?.product_visibility, showdown_role:plan?.showdown_role ?? null,
+      energy_level:plan?.energy_level, camera_platform:plan?.camera_platform ?? null,
+      graphic_spec:plan?.graphic_spec ?? null,
+      stage_id: plan?.stage_id || String(item.stage_id || ''), state: plan?.state || String(item.state||'').toUpperCase().replace(/^STATE[_\s-]*/,'') as 'A'|'B'|'C',
       subject: String(item.subject || ''), product_visual_state: String(item.product_visual_state || ''),
       primary_action: String(item.primary_action || ''), supporting_motion: String(item.supporting_motion || ''),
       environment_ref: plan?.environment_ref || String(item.environment_ref || ''), environment_description: String(item.environment_description || ''),
@@ -63,9 +66,11 @@ export function validateSceneDirections(directions: unknown, timedScenes: TimedS
     if (Math.abs(Number(direction.start) - timed.start) > 0.001 || Math.abs(Number(direction.end) - timed.end) > 0.001 || Math.abs(Number(direction.duration) - timed.duration) > 0.001) errors.push(`${label}: timing metadata was modified.`);
     if (String(direction.voiceover ?? '') !== timed.text || Boolean(direction.silent) !== timed.silent) errors.push(`${label}: imported VO or silence metadata was modified.`);
     const plan = plannedScenes?.find(item => item.number === number);
-    if (plan) (['chapter_id','beat_id','visual_family','story_function','visual_treatment','product_visibility','stage_id','state'] as const).forEach(field => {
-      if (direction[field] !== plan[field]) errors.push(`${label}: immutable plan field ${field} was modified.`);
+    if (plan) (['chapter_id','beat_id','visual_family','story_function','visual_treatment','product_visibility','showdown_role','energy_level','camera_platform','stage_id','state'] as const).forEach(field => {
+      const expected=(field==='showdown_role'||field==='camera_platform')?(plan[field]??null):plan[field];
+      if (direction[field] !== expected) errors.push(`${label}: immutable plan field ${field} was modified.`);
     });
+    if(plan&&JSON.stringify(direction.graphic_spec??null)!==JSON.stringify(plan.graphic_spec??null))errors.push(`${label}: immutable plan field graphic_spec was modified.`);
     if (!['A', 'B', 'C'].includes(direction.state)) errors.push(`${label}: state must be A, B, or C.`);
     requiredStrings.forEach(field => { if (!String(direction[field] || '').trim()) errors.push(`${label}: ${field} is required.`); });
     ['shot_scale', 'lens', 'angle', 'movement', 'movement_speed'].forEach(field => { if (!String(direction.camera?.[field] || '').trim()) errors.push(`${label}: camera.${field} is required.`); });

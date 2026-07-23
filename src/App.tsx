@@ -31,7 +31,7 @@ const PHASES = [
   { id: 3, label: 'T2V PROMPTS', description: 'Generate Timestamped Video Prompts' },
 ];
 export const INITIAL_STATE: AppState = {
-  projectSchemaVersion: 6,
+  projectSchemaVersion: 8,
   id: undefined,
   projectName: 'Untitled Manufacturing Sequence',
   projectFormat: 'standard-lifecycle',

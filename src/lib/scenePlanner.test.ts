@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import template from '../schemas/Modus_Visual_Production_Handoff_V2_Template.json';
 import { normalizeProductionHandoff } from './productionTemplate';
-import { buildDocumentaryScenePlan, isOperationallyMobileProduct } from './scenePlanner';
+import { buildDocumentaryScenePlan, deriveGraphicSceneSpec, isOperationallyMobileProduct } from './scenePlanner';
 
 const scenes=(count:number,duration=10)=>Array.from({length:count},(_,i)=>({number:i+1,start:i*duration,end:(i+1)*duration,duration,text:i%4===0?'factory scale and logistics':i%4===1?'assembly workers install component':i%4===2?'precision testing and measurement':'mechanical system relationship',silent:false}));
 const operationalTopic=(productClass='combat helicopter',restricted=false)=>{
@@ -50,6 +50,15 @@ test('guarantees operational footage in the opening and at recurring intervals f
   const numbers=plan.filter(operational).map(item=>item.number);for(let i=1;i<numbers.length;i++)assert.ok(numbers[i]-numbers[i-1]<=9);
   for(let i=2;i<plan.length;i++)assert.ok(!(operational(plan[i])&&operational(plan[i-1])&&operational(plan[i-2])));
   assert.ok(plan.filter(operational).every(item=>item.state==='C'));
+  assert.equal(plan[0].showdown_role,'GROUND_REVEAL');
+  assert.equal(plan[0].camera_platform,'GROUND_TRIPOD');
+  assert.equal(plan[1].showdown_role,'HUMAN_SCALE');
+  assert.equal(plan[2].showdown_role,'DEPARTURE');
+  assert.equal(plan[2].camera_platform,'RUNWAY_LONG_LENS');
+  assert.ok(plan.slice(5,10).some(item=>item.showdown_role==='COCKPIT_IMMERSION'||item.showdown_role==='AIRBORNE_ESTABLISHMENT'));
+  assert.ok(plan.some(item=>item.showdown_role==='SECOND_PEAK'));
+  assert.ok(plan.some(item=>item.showdown_role==='CONTROLLED_RETURN'));
+  assert.ok(plan.filter(item=>item.showdown_role==='COCKPIT_IMMERSION').every(item=>item.product_visibility==='DETAIL_ONLY'));
 });
 
 test('creates T2V-safe contextual alternatives for reference-only operational events',()=>{
@@ -60,4 +69,32 @@ test('creates T2V-safe contextual alternatives for reference-only operational ev
 test('detects aircraft but does not classify a stationary industrial product as mobile',()=>{
   assert.equal(isOperationallyMobileProduct(operationalTopic('fighter aircraft')),true);
   const stationary=normalizeProductionHandoff(JSON.parse(JSON.stringify(template)));assert.equal(isOperationallyMobileProduct(stationary),false);
+});
+
+test('does not add aviation showdown metadata to non-aviation manufacturing scenes',()=>{
+  const topic=normalizeProductionHandoff(JSON.parse(JSON.stringify(template)));
+  const plan=buildDocumentaryScenePlan(topic,scenes(12));
+  assert.ok(plan.every(item=>item.showdown_role===null&&item.camera_platform===null));
+});
+
+test('classifies text-free technical graphic subtypes from VO and beat semantics',()=>{
+  const plan={beat_id:'GFX',visual_family:'TECHNICAL_GRAPHIC',visual_treatment:'MOTION_GRAPHIC_T2V'} as const;
+  const scene=(text:string)=>({number:1,start:0,end:10,duration:10,text,silent:false});
+  assert.equal(deriveGraphicSceneSpec(null,scene('Radar waves sweep outward and detect the aircraft'),plan as any)?.graphic_subtype,'SENSOR_SIGNAL');
+  assert.equal(deriveGraphicSceneSpec(null,scene('Heat moves from the combustion chamber through the turbine'),plan as any)?.graphic_subtype,'HEAT_OR_ENERGY_FLOW');
+  assert.equal(deriveGraphicSceneSpec(null,scene('Compare the two aircraft on the same scale'),plan as any)?.graphic_subtype,'SCALE_COMPARISON');
+  const factory=deriveGraphicSceneSpec(null,scene('A robotic arm installs the component in the factory'),plan as any);
+  assert.equal(factory?.graphic_subtype,'FACTORY_SCHEMATIC');
+  assert.equal(factory?.text_policy,'NO_GENERATED_TEXT');
+  assert.ok((factory?.annotation_devices.length||0)<=2);
+  assert.ok((factory?.maximum_animated_elements||0)<=3);
+});
+
+test('stores a graphic specification on every planned static or motion graphic',()=>{
+  const topic=normalizeProductionHandoff(JSON.parse(JSON.stringify(template)));
+  const plan=buildDocumentaryScenePlan(topic,scenes(35));
+  const graphics=plan.filter(item=>item.visual_treatment==='STATIC_GRAPHIC_T2V'||item.visual_treatment==='MOTION_GRAPHIC_T2V');
+  assert.ok(graphics.length>0);
+  assert.ok(graphics.every(item=>item.graphic_spec?.text_policy==='NO_GENERATED_TEXT'));
+  assert.ok(plan.filter(item=>item.visual_treatment==='LIVE_ACTION_T2V').every(item=>item.graphic_spec===null));
 });

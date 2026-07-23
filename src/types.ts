@@ -158,6 +158,73 @@ export interface VoiceoverTranscription {
   importedAt: string;
 }
 export type VisualTreatment = 'LIVE_ACTION_T2V' | 'STATIC_GRAPHIC_T2V' | 'MOTION_GRAPHIC_T2V';
+export type ShowdownRole =
+  | 'ANTICIPATION'
+  | 'GROUND_REVEAL'
+  | 'HUMAN_SCALE'
+  | 'PREPARATION'
+  | 'DEPARTURE'
+  | 'AIRBORNE_ESTABLISHMENT'
+  | 'PERFORMANCE_PASS'
+  | 'COCKPIT_IMMERSION'
+  | 'ENVIRONMENTAL_SPECTACLE'
+  | 'OPERATIONAL_RESET'
+  | 'SECOND_PEAK'
+  | 'CONTROLLED_RETURN';
+export type CinematicEnergy = 'LOW' | 'MEDIUM' | 'HIGH';
+export type CameraPlatform =
+  | 'GROUND_TRIPOD'
+  | 'GROUND_HANDHELD'
+  | 'RUNWAY_LONG_LENS'
+  | 'DISTANT_OBSERVATION'
+  | 'CHASE_AIRCRAFT'
+  | 'COCKPIT_MOUNTED'
+  | 'CANOPY_SIDE'
+  | 'VEHICLE_OR_DECK_MOUNTED';
+export type GraphicSubtype =
+  | 'COMPONENT_HIGHLIGHT'
+  | 'TECHNICAL_CUTAWAY'
+  | 'PROCESS_FLOW'
+  | 'MECHANICAL_RELATIONSHIP'
+  | 'LAYER_EXPLANATION'
+  | 'SCALE_COMPARISON'
+  | 'SENSOR_SIGNAL'
+  | 'HEAT_OR_ENERGY_FLOW'
+  | 'FACTORY_SCHEMATIC'
+  | 'SYMBOLIC_LOCATION'
+  | 'CONCEPTUAL_TRANSITION';
+export type GraphicComposition =
+  | 'SINGLE_SUBJECT'
+  | 'ORTHOGRAPHIC_CUTAWAY'
+  | 'LEFT_TO_RIGHT_FLOW'
+  | 'LAYERED_SEPARATION'
+  | 'TWO_PANEL_COMPARISON'
+  | 'CONCENTRIC_SIGNAL_FIELD'
+  | 'SCHEMATIC_FACTORY'
+  | 'SYMBOLIC_ROUTE'
+  | 'MATCHED_SHAPE_TRANSITION';
+export type GraphicMotionPattern =
+  | 'MINIMAL_PARALLAX'
+  | 'HIGHLIGHT_PULSE'
+  | 'FLOW_DRAW_ON'
+  | 'COMPONENT_TRANSLATION'
+  | 'LAYER_SEPARATION'
+  | 'SIGNAL_SWEEP'
+  | 'HEAT_ZONE_PROGRESSION'
+  | 'CONTROLLED_ASSEMBLY'
+  | 'MATCH_ANCHOR';
+export type GraphicAnnotationDevice = 'DIRECTIONAL_ARROWS'|'FLOW_LINES'|'HIGHLIGHT_RING'|'COLORED_ZONE'|'SIGNAL_WAVES'|'MEASUREMENT_BASELINE';
+export interface GraphicSceneSpec {
+  graphic_subtype: GraphicSubtype;
+  visual_claim: string;
+  composition: GraphicComposition;
+  motion_pattern: GraphicMotionPattern;
+  annotation_devices: GraphicAnnotationDevice[];
+  palette_profile: 'PREMIUM_TECHNICAL_VECTOR';
+  maximum_animated_elements: 1 | 2 | 3;
+  transition_anchor: string | null;
+  text_policy: 'NO_GENERATED_TEXT';
+}
 export interface PlannedScene {
   number: number;
   chapter_id: string;
@@ -169,6 +236,10 @@ export interface PlannedScene {
   stage_id: string;
   environment_ref: string;
   state: 'A' | 'B' | 'C';
+  showdown_role: ShowdownRole | null;
+  energy_level: CinematicEnergy;
+  camera_platform: CameraPlatform | null;
+  graphic_spec: GraphicSceneSpec | null;
 }
 export interface TemporalAction {
   opening_state: string;
@@ -190,6 +261,10 @@ export interface SceneDirection {
   story_function?: StoryFunction;
   visual_treatment?: VisualTreatment;
   product_visibility?: ProductVisibility;
+  showdown_role?: ShowdownRole | null;
+  energy_level?: CinematicEnergy;
+  camera_platform?: CameraPlatform | null;
+  graphic_spec?: GraphicSceneSpec | null;
   stage_id: string;
   state: 'A' | 'B' | 'C';
   subject: string;

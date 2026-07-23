@@ -5,8 +5,8 @@ import type { AppState } from '../types';
 import template from '../schemas/Modus_Visual_Production_Handoff_V2_Template.json';
 import { normalizeProductionHandoff } from './productionTemplate';
 
-const initial = { projectSchemaVersion: 6, projectName: 'Untitled', projectFormat: 'standard-lifecycle', phase: 1, topic: null, plannedScenes:[], sceneDirections: [], masterVoiceoverScript: '', voiceoverTranscription: null, t2vPromptProfile:'omni-flash', visualPrompts: [], demoState: 'idle', demoScenes: [], demoSceneNumbers: [] } as AppState;
-const plan={number:1,chapter_id:'CH01',beat_id:'B01',visual_family:'ASSEMBLY_PROCESS',story_function:'EXPLAIN_PROCESS',visual_treatment:'LIVE_ACTION_T2V',product_visibility:'PARTIAL',stage_id:'S01',environment_ref:'E01',state:'B'} as const;
+const initial = { projectSchemaVersion: 8, projectName: 'Untitled', projectFormat: 'standard-lifecycle', phase: 1, topic: null, plannedScenes:[], sceneDirections: [], masterVoiceoverScript: '', voiceoverTranscription: null, t2vPromptProfile:'omni-flash', visualPrompts: [], demoState: 'idle', demoScenes: [], demoSceneNumbers: [] } as AppState;
+const plan={number:1,chapter_id:'CH01',beat_id:'B01',visual_family:'ASSEMBLY_PROCESS',story_function:'EXPLAIN_PROCESS',visual_treatment:'LIVE_ACTION_T2V',product_visibility:'PARTIAL',stage_id:'S01',environment_ref:'E01',state:'B',showdown_role:null,energy_level:'MEDIUM',camera_platform:null,graphic_spec:null} as const;
 const temporal_action={opening_state:'The part rests in its jig',primary_motion:'A worker lowers the tool',physical_interaction:'The tool contacts the part',mid_shot_progression:'The fastener seats progressively',ending_state:'The tool lifts away from the secured part'};
 
 test('rejects Hybrid projects', () => assert.equal(migrateProject({ creationMode: 'hybrid-split' }, initial, 10).state, null));
@@ -25,7 +25,7 @@ test('round-trips a complete 8-second T2V project without changing its timeline'
   assert.equal(result.state?.phase, 3);
   assert.equal(result.state?.voiceoverTranscription?.sceneDurationSeconds, 8);
   assert.equal(result.state?.visualPrompts.length, 1);
-  assert.equal(result.state?.projectSchemaVersion, 6);
+  assert.equal(result.state?.projectSchemaVersion, 8);
   assert.equal('apiKey' in parsed, false);
 
   const partial = JSON.parse(JSON.stringify(raw));
@@ -61,4 +61,14 @@ test('preserves the complete V2 handoff through project JSON migration', () => {
   const result = migrateProject(exported, initial, 10);
   assert.deepEqual(result.state?.topic?._production_handoff, template);
   assert.deepEqual(result.state?.topic?._production_handoff?.visual_story_plan, template.visual_story_plan);
+});
+
+test('derives missing graphic specifications when migrating a schema 7 project',()=>{
+  const graphicPlan={...plan,visual_family:'TECHNICAL_GRAPHIC',visual_treatment:'MOTION_GRAPHIC_T2V',product_visibility:'NONE',graphic_spec:undefined};
+  const scene={...graphicPlan,number:1,start:0,end:8,duration:8,voiceover:'Radar signals sweep across the detection field',silent:false,state:'B',subject:'Radar signal relationship',product_visual_state:'Conceptual technical diagram',primary_action:'One signal sweep crosses the field',supporting_motion:'One colored zone reveals the response',environment_description:'Abstract technical space',camera:{shot_scale:'wide',lens:'orthographic',angle:'top-down',movement:'static',movement_speed:'none'},lighting_and_material:'Flat vector palette',continuity_from_previous:'Opening',transition_to_next:'Hold',required_visible_features:['concentric signal field'],forbidden_elements:['readable text'],temporal_action};
+  const raw:any={...initial,projectSchemaVersion:7,phase:2,topic:{topic:{title:'Radar',category:'aircraft'}},plannedScenes:[graphicPlan],voiceoverTranscription:{duration:8,sceneDurationSeconds:8,text:scene.voiceover,words:[],scenes:[{number:1,start:0,end:8,duration:8,text:scene.voiceover,silent:false}]},sceneDirections:[scene]};
+  const result=migrateProject(raw,initial,8);
+  assert.equal(result.state?.plannedScenes[0]?.graphic_spec?.graphic_subtype,'SENSOR_SIGNAL');
+  assert.equal(result.state?.sceneDirections[0]?.graphic_spec?.text_policy,'NO_GENERATED_TEXT');
+  assert.equal(result.state?.projectSchemaVersion,8);
 });

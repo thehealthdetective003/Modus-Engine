@@ -169,6 +169,51 @@ function stateSentence(direction:SceneDirection,resolved:ResolvedProductionScene
   return sentence(`Keep the underlying ${productName(topic)} proportions stable. Show only the incomplete State ${direction.state} configuration: ${present}.${exposed}.${absent}`.replace(/\.\s*\./g,'. '));
 }
 
+const showdownPurpose=(direction:SceneDirection):string=>{
+  switch(direction.showdown_role){
+    case 'ANTICIPATION':return 'Begin in controlled stillness and reveal operational scale without premature spectacle';
+    case 'GROUND_REVEAL':return 'Establish the aircraft as a real operational machine at rest with clear scale';
+    case 'HUMAN_SCALE':return 'Use restrained professional personnel or support equipment to communicate aircraft scale';
+    case 'PREPARATION':return 'Show one visible readiness action progressing toward operation';
+    case 'DEPARTURE':return 'Progress from grounded movement into one credible takeoff, hover transition, or climb';
+    case 'AIRBORNE_ESTABLISHMENT':return 'Establish stable forward flight clearly within the surrounding airspace';
+    case 'PERFORMANCE_PASS':return 'Show one readable coordinated pass or bank without changing configuration';
+    case 'COCKPIT_IMMERSION':return 'Communicate maneuver forces through a restrained operator, moving horizon, vibration, and canopy reflections';
+    case 'ENVIRONMENTAL_SPECTACLE':return 'Use only physically caused cloud, vapor, heat haze, dust, spray, airflow, or downwash as spectacle';
+    case 'OPERATIONAL_RESET':return 'Return to grounded preparation or inspection and reveal new operational information';
+    case 'SECOND_PEAK':return 'Increase at least two supported dimensions of proximity, speed cue, maneuver intensity, formation scale, environmental response, or operator immersion';
+    case 'CONTROLLED_RETURN':return 'Reduce intensity through stable approach, landing, taxi, or subdued ground movement';
+    default:return '';
+  }
+};
+
+const graphicCompositionPhrase=(value:string):string=>({
+  SINGLE_SUBJECT:'one dominant simplified subject with generous negative space',
+  ORTHOGRAPHIC_CUTAWAY:'a clear orthographic cutaway with exposed layers kept visually separate',
+  LEFT_TO_RIGHT_FLOW:'a clean left-to-right process composition',
+  LAYERED_SEPARATION:'parallel layers separated along one stable axis',
+  TWO_PANEL_COMPARISON:'two balanced text-free panels on one shared visual baseline',
+  CONCENTRIC_SIGNAL_FIELD:'a top-down concentric signal field with one source and one response',
+  SCHEMATIC_FACTORY:'a layered schematic factory with restrained foreground machinery and one central process',
+  SYMBOLIC_ROUTE:'a symbolic route through broad geometric terrain without cartographic detail',
+  MATCHED_SHAPE_TRANSITION:'one centered geometric form held as a stable transition anchor',
+} as Record<string,string>)[value]||'one clear technical composition';
+const graphicMotionPhrase=(value:string):string=>({
+  MINIMAL_PARALLAX:'Use only minimal parallax and a restrained light pass',
+  HIGHLIGHT_PULSE:'Pulse one clean highlight once around the relevant feature',
+  FLOW_DRAW_ON:'Draw one directional flow progressively through the composition',
+  COMPONENT_TRANSLATION:'Move one component along one mechanically credible path',
+  LAYER_SEPARATION:'Separate the layers gently while preserving alignment and proportions',
+  SIGNAL_SWEEP:'Rotate one restrained signal sweep while source and target remain fixed',
+  HEAT_ZONE_PROGRESSION:'Progress one clean cool-to-warm energy zone through the mechanism',
+  CONTROLLED_ASSEMBLY:'Move one tool or component through one controlled assembly interaction',
+  MATCH_ANCHOR:'Move gently toward the centered transition shape without morphing it',
+} as Record<string,string>)[value]||'Keep all geometry stable';
+const graphicAnnotationPhrase=(values:string[]):string=>values.map(value=>({
+  DIRECTIONAL_ARROWS:'simple directional arrows',FLOW_LINES:'clean flow lines',HIGHLIGHT_RING:'one highlight ring',
+  COLORED_ZONE:'one colored emphasis zone',SIGNAL_WAVES:'simple signal waves',MEASUREMENT_BASELINE:'an unlabeled measurement baseline',
+} as Record<string,string>)[value]||'').filter(Boolean).join(' and ');
+
 export function normalizeOmniSections(raw:any,direction:SceneDirection,topic:TopicBrief|null):{sections:OmniPromptSections;resolved:ResolvedProductionScene} {
   const resolved=resolveProductionScene(topic,direction);
   const treatment=direction.visual_treatment||'LIVE_ACTION_T2V';
@@ -197,18 +242,23 @@ export function normalizeOmniSections(raw:any,direction:SceneDirection,topic:Top
   const speedClause=resolved.camera.speed&&resolved.camera.behavior!=='locked camera'&&!speedAlreadyExpressed?` at ${resolved.camera.speed} speed`:'';
   const temporal=direction.temporal_action;
   const temporalAction=temporal?`${temporal.opening_state}. ${temporal.primary_motion}; ${temporal.physical_interaction}. Mid-shot, ${temporal.mid_shot_progression}. End with ${temporal.ending_state}`:cleanSpace(raw?.action)||direction.primary_action;
+  const showdownAction=showdownPurpose(direction);
+  const platform=direction.camera_platform?.toLowerCase().replaceAll('_',' ');
+  const graphicSpec=direction.graphic_spec;
+  const graphicAnnotations=graphicSpec?graphicAnnotationPhrase(graphicSpec.annotation_devices):'';
+  const graphicAction=graphicSpec?`Use the opening quarter to establish the complete composition. ${graphicMotionPhrase(graphicSpec.motion_pattern)} while moving no more than ${graphicSpec.maximum_animated_elements} elements and keeping the background and major geometry fixed. Resolve the single relationship through the middle half, then hold the completed graphic steadily for the final quarter`:temporalAction;
   const moduleIdentity=preferSpecific(resolved.identity,2);
   const productState=visibility==='NONE'?'':visibility==='DETAIL_ONLY'?(moduleIdentity.length?sentence(`Show only this component detail: ${naturalList(moduleIdentity)}`):sentence(direction.product_visual_state)):visibility==='FULL'?[canonicalIdentitySignature(topic),viewpointIdentitySentence(resolved)].filter(Boolean).join(' '):stateSentence(direction,resolved,topic);
   const graphicSubject=treatment==='STATIC_GRAPHIC_T2V'?'An unlabeled documentary technical composition of clean geometric forms and material layers':treatment==='MOTION_GRAPHIC_T2V'?'An unlabeled documentary motion graphic of components, paths, layers, and mechanical relationships':'';
   const sections:OmniPromptSections={
-    cinematography:treatment==='STATIC_GRAPHIC_T2V'?'Use a stable orthographic documentary composition with only minimal parallax and a restrained light pass':treatment==='MOTION_GRAPHIC_T2V'?'Use a stable technical viewpoint with one controlled graphic camera drift':`Use a ${resolved.camera.shotScale} ${resolved.camera.viewpoint} view on a ${resolved.camera.lens} lens, with one ${resolved.camera.behavior}${speedClause}`,
-    subject:graphicSubject||(/\b(?:is|are|stands|sits|rests|remains|appears|moves|shows)\b/i.test(rawSubject)?rawSubject:`The scene shows ${rawSubject}`),
-    action:temporalAction,
+    cinematography:graphicSpec?`Use a stable 16:9 flat vector composition with ${graphicCompositionPhrase(graphicSpec.composition)} and no orbit, handheld motion, lens change, or artificial depth distortion`:treatment==='STATIC_GRAPHIC_T2V'?'Use a stable orthographic documentary composition with only minimal parallax and a restrained light pass':treatment==='MOTION_GRAPHIC_T2V'?'Use a stable technical viewpoint with one controlled graphic camera drift':`${platform?`Film from a physically credible ${platform}. `:''}Use a ${resolved.camera.shotScale} ${resolved.camera.viewpoint} view on a ${resolved.camera.lens} lens, with one ${resolved.camera.behavior}${speedClause}`,
+    subject:graphicSpec?`Create a premium technical vector explainer for one claim: ${graphicSpec.visual_claim}${graphicAnnotations?`, using ${graphicAnnotations}`:''}`:graphicSubject||(/\b(?:is|are|stands|sits|rests|remains|appears|moves|shows)\b/i.test(rawSubject)?rawSubject:`The scene shows ${rawSubject}`),
+    action:[showdownAction,graphicAction].filter(Boolean).join('. '),
     environment:treatment==='LIVE_ACTION_T2V'?[/\b(?:is|are|inside|within|across|on the|in the)\b/i.test(rawEnvironment)?rawEnvironment:`Set the shot in ${rawEnvironment}`,inferred].filter(Boolean).join('. '):'Use a clean neutral technical space with no literal factory set, map, interface, or readable annotation',
-    style_lighting:treatment==='LIVE_ACTION_T2V'?(/^(?:use|render|light|keep)\b/i.test(rawStyle)?rawStyle:`Use ${rawStyle}`):'Use restrained documentary colors, precise edges, controlled depth, and physically plausible material shading',
+    style_lighting:graphicSpec?'Use geometric silhouettes, minimal texture, restrained outlines, two- or three-tone cel shading, pale cyan and sky blue, cool gray and charcoal, one red annotation accent, and limited yellow-orange only for active heat or energy':treatment==='LIVE_ACTION_T2V'?(/^(?:use|render|light|keep)\b/i.test(rawStyle)?rawStyle:`Use ${rawStyle}`):'Use restrained documentary colors, precise edges, controlled depth, and physically plausible material shading',
     product_state:productState,
     sound,
-    exclusions:naturalList(uniqueStrings([cleanExclusions,treatment!=='LIVE_ACTION_T2V'?['readable labels','numbers','logos','maps','fake user interfaces','precise generated data']:[],visibility==='NONE'?['the finished product or product silhouette']:[],operational?['weapon discharge','explosions or active combat','impossible aerobatics','changing product configuration','invented unit markings','exact event recreation','identifiable location claims']:[]])),
+    exclusions:naturalList(uniqueStrings([cleanExclusions,treatment!=='LIVE_ACTION_T2V'?['readable labels','numbers','logos','maps','fake user interfaces','precise generated data']:[],graphicSpec?['blank label cards or editor placeholders','typography or speech bubbles','photorealistic or cinematic 3D materials','moving backgrounds','morphing or duplicated geometry','childish cartoon proportions']:[],visibility==='NONE'?['the finished product or product silhouette']:[],operational?['weapon discharge','explosions or active combat','impossible aerobatics','changing product configuration','invented unit markings','exact event recreation','identifiable location claims']:[],direction.showdown_role?['morphing aircraft geometry','impossible camera paths','camera passing through the aircraft','unnatural sideways sliding','unverified flares or external stores']:[]])),
   };
   return {sections,resolved};
 }

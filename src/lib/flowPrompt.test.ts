@@ -36,14 +36,17 @@ test('Omni receives only batch-relevant handoff records while Veo remains unchan
 });
 
 test('Veo compiles graphic treatments without finished identity or factory ambience',()=>{
-  const graphic={...direction,visual_treatment:'MOTION_GRAPHIC_T2V' as const,product_visibility:'NONE' as const,temporal_action:{opening_state:'Three shapes are separated',primary_motion:'One path connects the shapes',physical_interaction:'The path meets each edge',mid_shot_progression:'The relationship resolves',ending_state:'The composition settles'}};
+  const graphic={...direction,visual_treatment:'MOTION_GRAPHIC_T2V' as const,product_visibility:'NONE' as const,graphic_spec:{graphic_subtype:'SENSOR_SIGNAL' as const,visual_claim:'Show one radar signal sweeping toward one stable aircraft silhouette',composition:'CONCENTRIC_SIGNAL_FIELD' as const,motion_pattern:'SIGNAL_SWEEP' as const,annotation_devices:['SIGNAL_WAVES' as const,'COLORED_ZONE' as const],palette_profile:'PREMIUM_TECHNICAL_VECTOR' as const,maximum_animated_elements:2 as const,transition_anchor:null,text_policy:'NO_GENERATED_TEXT' as const},temporal_action:{opening_state:'Three shapes are separated',primary_motion:'One path connects the shapes',physical_interaction:'The path meets each edge',mid_shot_progression:'The relationship resolves',ending_state:'The composition settles'}};
   const result=finalizeFlowPrompt('ignored',graphic,topic,'veo-flow');
-  assert.match(result,/motion graphic/i);assert.doesNotMatch(result,/Maintain this finished-product identity|ambient production sound/i);assert.match(result,/no readable text/i);
+  assert.match(result,/premium 16:9 flat 2D vector technical explainer/i);assert.match(result,/concentric signal field/i);assert.match(result,/final quarter as a steady comprehension hold/i);
+  assert.doesNotMatch(result,/Maintain this finished-product identity|ambient production sound|reserve (?:a )?blank label|add (?:the )?text later|editor-added typography/i);
+  assert.match(result,/generated words or numbers/i);assert.equal((result.match(/10-second continuous shot/gi)||[]).length,1);
 });
 
 test('Veo operational prompts include aircraft motion safeguards and synchronized sound',()=>{
-  const operational={...direction,visual_family:'DYNAMIC_TESTING' as const,visual_treatment:'LIVE_ACTION_T2V' as const,product_visibility:'FULL' as const,primary_action:'The fighter aircraft performs a controlled banked transit'};
+  const operational={...direction,visual_family:'DYNAMIC_TESTING' as const,visual_treatment:'LIVE_ACTION_T2V' as const,product_visibility:'FULL' as const,primary_action:'The fighter aircraft performs a controlled banked transit',showdown_role:'SECOND_PEAK' as const,energy_level:'HIGH' as const,camera_platform:'CHASE_AIRCRAFT' as const};
   const localTopic={...topic,_production_handoff:{product:{product_class:'fighter aircraft'}}} as any;
   const result=finalizeFlowPrompt('The aircraft enters a smooth bank while a long-lens camera tracks from the ground.',operational,localTopic,'veo-flow');
   assert.match(result,/propulsion, airflow, wind, and control-surface sound/i);assert.match(result,/weapon discharge/i);assert.match(result,/impossible aerobatics/i);
+  assert.match(result,/physically credible chase aircraft/i);assert.match(result,/stable geometry and a settled ending/i);assert.match(result,/camera passing through the aircraft/i);
 });
