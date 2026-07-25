@@ -34,7 +34,10 @@ export function migrateProject(raw: any, initial: AppState, sceneDuration: 8 | 1
     graphicSubtypes.includes(item?.graphic_spec?.graphic_subtype)&&item?.graphic_spec?.visual_claim&&item?.graphic_spec?.composition&&item?.graphic_spec?.motion_pattern
     &&Array.isArray(item?.graphic_spec?.annotation_devices)&&[1,2,3].includes(item?.graphic_spec?.maximum_animated_elements)&&item?.graphic_spec?.text_policy==='NO_GENERATED_TEXT'
   );
-  const planValid = raw.projectSchemaVersion >= 7 && !!transcription && rawPlan.length === transcription.scenes.length && rawPlan.every((item:any,index:number)=>
+  // Schema 9 introduces VO-authoritative documentary planning. Earlier plans
+  // used fixed variety quotas that could place aerial, graphic, or operational
+  // footage over unrelated narration, so they must be rebuilt in Phase 2.
+  const planValid = raw.projectSchemaVersion >= 9 && !!transcription && rawPlan.length === transcription.scenes.length && rawPlan.every((item:any,index:number)=>
     item?.number===index+1&&item?.chapter_id&&item?.beat_id&&item?.visual_family&&item?.story_function&&item?.visual_treatment&&item?.product_visibility&&item?.stage_id&&item?.environment_ref&&['A','B','C'].includes(item?.state)
     &&(item?.showdown_role===null||showdownRoles.includes(item?.showdown_role))&&['LOW','MEDIUM','HIGH'].includes(item?.energy_level)
     &&(item?.camera_platform===null||cameraPlatforms.includes(item?.camera_platform))&&graphicSpecValid(item)
@@ -85,8 +88,11 @@ export function migrateProject(raw: any, initial: AppState, sceneDuration: 8 | 1
     visualPrompts: preserveOutput ? compatiblePrompts.sort((a,b)=>a.number-b.number) : [],
     demoState: 'idle', demoScenes: [], demoSceneNumbers: [],
     t2vPromptProfile: profileSupported ? raw.t2vPromptProfile : 'omni-flash',
-    projectSchemaVersion: 8,
+    projectSchemaVersion: 9,
   };
   const reset = timingChanged || imageMode || !profileSupported || !directionsValid || !preserveOutput;
-  return { state, message: reset && raw.topic ? 'Project migrated to the timestamped T2V pipeline; incompatible downstream output was reset.' : undefined };
+  const planningUpgrade = raw.projectSchemaVersion < 9 && rawPlan.length > 0;
+  return { state, message: planningUpgrade
+    ? 'Project content and transcript were preserved. Rebuild Phase 2 directions with the new VO-synchronized documentary planner.'
+    : reset && raw.topic ? 'Project migrated to the timestamped T2V pipeline; incompatible downstream output was reset.' : undefined };
 }

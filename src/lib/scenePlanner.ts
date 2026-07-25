@@ -1,5 +1,5 @@
 import type { CameraPlatform, CinematicEnergy, GraphicAnnotationDevice, GraphicComposition, GraphicMotionPattern, GraphicSceneSpec, GraphicSubtype, PlannedScene, ProductVisibility, ShowdownRole, StoryFunction, TimedScene, TopicBrief, VisualFamily, VisualTreatment } from '../types';
-import type { V2Chapter, V2ProductionStage, V2VisualBeat, VisualProductionHandoffV2 } from '../types/visualProductionV2';
+import type { V2Chapter, V2VisualBeat, VisualProductionHandoffV2 } from '../types/visualProductionV2';
 
 interface Candidate {
   chapter: V2Chapter | null;
@@ -9,12 +9,11 @@ interface Candidate {
 }
 
 const CONTEXT = new Set<VisualFamily>(['FACTORY_AERIAL','FACTORY_EXTERIOR','FACILITY_APPROACH','FACTORY_INTERIOR_WIDE','MAP_OR_SUPPLY_CHAIN']);
-const PROCESS = new Set<VisualFamily>(['ASSEMBLY_PROCESS','COMPONENT_MACRO','TOOL_LEVEL_DETAIL','WORKER_POV','MACHINERY_ACTION','QUALITY_CONTROL','MEASUREMENT_AND_CALIBRATION','MATERIAL_FLOW','COMPONENT_LOGISTICS']);
-const RESET = new Set<VisualFamily>(['TECHNICAL_GRAPHIC','MAP_OR_SUPPLY_CHAIN','ATMOSPHERIC_INTERSTITIAL','CHAPTER_TRANSITION','STATIC_GROUND_TEST','DYNAMIC_TESTING','ENVIRONMENTAL_TESTING']);
 const GRAPHIC = new Set<VisualFamily>(['TECHNICAL_GRAPHIC','MAP_OR_SUPPLY_CHAIN']);
 const OPERATIONAL = new Set<VisualFamily>(['OPERATIONAL_CONTEXT','DYNAMIC_TESTING','DELIVERY_AND_ROLLOUT']);
-const balanceKey=(family:VisualFamily):string=>family==='HERO_PRODUCT'?'completed_product_hero_imagery_percent':GRAPHIC.has(family)||family==='ARCHIVAL_REFERENCE'?'graphics_and_reference_media_percent':['STATIC_GROUND_TEST','DYNAMIC_TESTING','ENVIRONMENTAL_TESTING','OPERATIONAL_CONTEXT','DELIVERY_AND_ROLLOUT'].includes(family)?'testing_and_operational_context_percent':['COMPONENT_MACRO','TOOL_LEVEL_DETAIL','QUALITY_CONTROL','MEASUREMENT_AND_CALIBRATION'].includes(family)?'component_detail_and_quality_control_percent':CONTEXT.has(family)||['MATERIAL_FLOW','COMPONENT_LOGISTICS'].includes(family)?'factory_scale_and_logistics_percent':'manufacturing_and_assembly_percent';
-const tokenize = (value: string) => new Set(value.toLowerCase().match(/[a-z0-9]{3,}/g) || []);
+const STOP_WORDS=new Set(['the','and','that','this','with','from','into','while','through','about','then','than','only','also','must','still','each','when','where','which','their','there','have','has','had','does','not','without','show','scene','visual','product','aircraft','factory','system','stage','complete','completed','structure','production']);
+const stem=(value:string)=>value.length>5?value.replace(/(?:ing|tion|ions|ments|ment|ed|es|s)$/,''):value;
+const tokenize = (value: string) => new Set((value.toLowerCase().match(/[a-z0-9]{3,}/g) || []).map(stem).filter(value=>!STOP_WORDS.has(value)));
 const overlap = (a: Set<string>, b: Set<string>) => [...a].filter(x => b.has(x)).length;
 const isV2 = (topic: TopicBrief): topic is TopicBrief & { _production_handoff: VisualProductionHandoffV2 } =>
   (topic._production_handoff as any)?.schema?.version === '2.0.0';
@@ -62,20 +61,18 @@ const SHOWDOWN_ENERGY:Record<ShowdownRole,CinematicEnergy>={
   SECOND_PEAK:'HIGH',CONTROLLED_RETURN:'LOW',
 };
 
-function showdownRoleFor(index:number,total:number,family:VisualFamily,operationalOrdinal:number):ShowdownRole|null{
-  if(index===0&&OPERATIONAL.has(family))return 'GROUND_REVEAL';
-  if(index===1&&PROCESS.has(family))return 'HUMAN_SCALE';
-  if(index===2&&OPERATIONAL.has(family))return 'DEPARTURE';
-  if(!OPERATIONAL.has(family)){
-    const progress=total<=1?0:index/(total-1);
-    return progress>=0.42&&progress<=0.58&&(family==='STATIC_GROUND_TEST'||family==='HERO_PRODUCT')?'OPERATIONAL_RESET':null;
-  }
-  const progress=total<=1?0:index/(total-1);
-  if(progress>=0.85)return 'CONTROLLED_RETURN';
-  if(progress>=0.62)return operationalOrdinal%3===0?'COCKPIT_IMMERSION':operationalOrdinal%2===0?'ENVIRONMENTAL_SPECTACLE':'SECOND_PEAK';
-  if(progress>=0.42&&progress<=0.58)return 'OPERATIONAL_RESET';
-  if(operationalOrdinal===2)return 'AIRBORNE_ESTABLISHMENT';
-  return operationalOrdinal%3===0?'COCKPIT_IMMERSION':operationalOrdinal%2===0?'ENVIRONMENTAL_SPECTACLE':'PERFORMANCE_PASS';
+function showdownRoleFor(scene:TimedScene,total:number,family:VisualFamily,operationalOrdinal:number):ShowdownRole|null{
+  if(!OPERATIONAL.has(family))return null;
+  const text=scene.text.toLowerCase(),progress=total<=1?0:(scene.number-1)/(total-1);
+  if(/\b(landing approach|begins? to land|lands?|landed|after landing|touchdown|rollout|returns? to technicians?|taxi(?:ing)? back)\b/.test(text))return 'CONTROLLED_RETURN';
+  if(/\b(cockpit|pilot|horizon|canopy|operator)\b/.test(text))return 'COCKPIT_IMMERSION';
+  if(/\b(takeoff|takes off|lift(?:s|ed)? from the ground|rotation|rotates?|vertical climb)\b/.test(text))return 'DEPARTURE';
+  if(/\b(begins? to roll|runway roll|taxi(?:ing)?|ground movement|steering|braking)\b/.test(text))return operationalOrdinal===1?'GROUND_REVEAL':'PREPARATION';
+  if(/\b(vapor|condensation|cloud|heat haze|airflow|downwash|spray|dust)\b/.test(text))return 'ENVIRONMENTAL_SPECTACLE';
+  if(/\b(inspect|inspection|ground check|power on|restrained|preparation)\b/.test(text))return 'OPERATIONAL_RESET';
+  if(progress>=0.7&&operationalOrdinal>2)return 'SECOND_PEAK';
+  if(/\b(accelerat|high.speed|low.altitude|steep|greater load|stronger)\b/.test(text))return 'PERFORMANCE_PASS';
+  return operationalOrdinal<=2?'AIRBORNE_ESTABLISHMENT':'PERFORMANCE_PASS';
 }
 
 function treatmentFor(beat: V2VisualBeat): VisualTreatment {
@@ -125,16 +122,17 @@ const GRAPHIC_ANNOTATIONS:Record<GraphicSubtype,GraphicAnnotationDevice[]>={
 };
 
 function graphicSubtypeFor(value:string):GraphicSubtype{
-  if(/\b(radar|sensor|signal|scan|detect|stealth|observab)/i.test(value))return 'SENSOR_SIGNAL';
+  if(/\b(radar|sensor|signal|scan|detect|stealth|observab|electronic command|data link|control chain)/i.test(value))return 'SENSOR_SIGNAL';
   if(/\b(heat|thermal|combust|exhaust|energy|temperature|thrust|airflow)/i.test(value))return 'HEAT_OR_ENERGY_FLOW';
-  if(/\b(engine|turbine|compressor|cutaway|cross[- ]section|interior|internal mechanism)/i.test(value))return 'TECHNICAL_CUTAWAY';
-  if(/\b(compare|comparison|versus|\bvs\b|larger|smaller|faster|slower|scale|size|weight|dimension)/i.test(value))return 'SCALE_COMPARISON';
+  if(/\b(propagat|route|sequence|cycle|process|stages|from .* to)/i.test(value))return 'PROCESS_FLOW';
+  if(/\b(compare|comparison|versus|\bvs\b|larger|smaller|faster|slower|scale|size|weight|dimension|symmetry|left and right|spacing)/i.test(value))return 'SCALE_COMPARISON';
   if(/\b(layer|laminate|stack|coating|material section|sandwich)/i.test(value))return 'LAYER_EXPLANATION';
+  if(/\b(turbine|compressor|cutaway|cross[- ]section|engine interior|internal mechanism)/i.test(value))return 'TECHNICAL_CUTAWAY';
   if(/\b(factory|assembly hall|robotic arm|production line|manufactur)/i.test(value))return 'FACTORY_SCHEMATIC';
   if(/\b(map|location|route|supply chain|logistics path|geograph)/i.test(value))return 'SYMBOLIC_LOCATION';
   if(/\b(transition|chapter|match cut|bridge)/i.test(value))return 'CONCEPTUAL_TRANSITION';
   if(/\b(flow|path|sequence|cycle|process|stages|from .* to)/i.test(value))return 'PROCESS_FLOW';
-  if(/\b(install|connect|interface|hinge|linkage|relationship|mechanism|movement)/i.test(value))return 'MECHANICAL_RELATIONSHIP';
+  if(/\b(install|connect|interface|hinge|linkage|relationship|mechanism|movement|geometry|converge|alignment)/i.test(value))return 'MECHANICAL_RELATIONSHIP';
   return 'COMPONENT_HIGHLIGHT';
 }
 
@@ -172,7 +170,6 @@ export function deriveGraphicSceneSpec(topic:TopicBrief|null|undefined,scene:Tim
 
 function candidatesFromV2(handoff: VisualProductionHandoffV2): Candidate[] {
   const all = handoff.visual_story_plan.chapters.flatMap(chapter => chapter.visual_beats.map(beat => ({ chapter, beat })));
-  const safe = all.filter(({ beat }) => beat.generation_permission === 'T2V_ALLOWED' && beat.preferred_media_routes.includes('GENERATED_T2V'));
   const normalized:Candidate[]=all.map(({ chapter, beat }):Candidate => {
     if (beat.generation_permission === 'T2V_ALLOWED' && beat.preferred_media_routes.includes('GENERATED_T2V')) return { chapter, beat, treatment: treatmentFor(beat), sourceBeatId: beat.beat_id };
     if(GRAPHIC.has(beat.visual_family)){
@@ -183,26 +180,11 @@ function candidatesFromV2(handoff: VisualProductionHandoffV2): Candidate[] {
       const contextual:V2VisualBeat={...beat,beat_id:`${beat.beat_id}__T2V_SAFE`,narrative_purpose:`Contextual generic operational demonstration: ${beat.narrative_purpose}`,reference_asset_ids:[],preferred_media_routes:['GENERATED_T2V'],generation_permission:'T2V_ALLOWED',exact_factory_claim_allowed:false,must_not_show:[...beat.must_not_show,'exact event recreation','identifiable real-world location','invented unit markings','weapon discharge','explosions or active combat']};
       return {chapter,beat:contextual,treatment:'LIVE_ACTION_T2V',sourceBeatId:contextual.beat_id};
     }
-    const substitute = safe.find(x => x.chapter.chapter_id === chapter.chapter_id && x.beat.story_function === beat.story_function)
-      || safe.find(x => x.chapter.chapter_id === chapter.chapter_id && x.beat.visual_family === beat.visual_family)
-      || safe.find(x => x.beat.story_function === beat.story_function)
-      || safe.find(x => RESET.has(x.beat.visual_family))
-      || safe[0];
-    if (substitute) return { chapter, beat: substitute.beat, treatment: treatmentFor(substitute.beat), sourceBeatId: substitute.beat.beat_id };
-    const conceptual: V2VisualBeat = { ...beat, beat_id: `${beat.beat_id}__T2V_SAFE`, visual_family: 'TECHNICAL_GRAPHIC', product_visibility: 'NONE', reference_asset_ids: [], preferred_media_routes: ['GENERATED_T2V'], generation_permission: 'T2V_ALLOWED', exact_factory_claim_allowed: false, must_not_show: [...beat.must_not_show, 'readable labels, numbers, logos, or precise data'] };
-    return { chapter, beat: conceptual, treatment: treatmentFor(conceptual), sourceBeatId: conceptual.beat_id };
-  });
-  const present=new Set(normalized.map(x=>x.beat.visual_family));
-  const fallbackFamilies:VisualFamily[]=['FACTORY_AERIAL','ASSEMBLY_PROCESS','COMPONENT_MACRO','MACHINERY_ACTION','QUALITY_CONTROL','TECHNICAL_GRAPHIC','ATMOSPHERIC_INTERSTITIAL','STATIC_GROUND_TEST','OPERATIONAL_CONTEXT'];
-  const stages=handoff.production_stages.length?handoff.production_stages:[{} as V2ProductionStage];
-  fallbackFamilies.forEach((family,fi)=>{
-    if(present.has(family))return;
-    const stage=OPERATIONAL.has(family)||family==='STATIC_GROUND_TEST'||family==='DYNAMIC_TESTING'?stages.at(-1)!:stages[fi%stages.length], graphic=GRAPHIC.has(family);
-    const identity=`${handoff.product.product_class} ${handoff.product.official_name}`.toLowerCase();
-    const operationalPurpose=/helicopter|rotorcraft/.test(identity)?'show the complete aircraft performing one controlled hover, climb, bank, transit, or landing maneuver with visible rotor physics and environmental response':/aircraft|airplane|fighter|jet|uas|uav|drone/.test(identity)?'show the complete aircraft performing one controlled taxi, takeoff, climb, formation transit, banked pass, approach, or landing action with visible aerodynamic response':'show the completed product performing one supported defining operation in a generic non-identifying real environment';
-    const purpose=family==='FACTORY_AERIAL'?'establish industrial scale and location':family==='ATMOSPHERIC_INTERSTITIAL'?'reset attention with material, light, weather, and industrial atmosphere':family==='TECHNICAL_GRAPHIC'?'explain an unlabeled mechanical relationship with shapes, layers, and paths':OPERATIONAL.has(family)?operationalPurpose:`show ${family.toLowerCase().replaceAll('_',' ')} as physical documentary evidence`;
-    const beat={beat_id:`SYNTH_${family}`,beat_order:900+fi,beat_name:`T2V-safe ${family.replaceAll('_',' ')}`,story_function:(CONTEXT.has(family)?'ESTABLISH_SCALE':RESET.has(family)?'RESET_ATTENTION':'EXPLAIN_PROCESS') as StoryFunction,visual_family:family,narrative_purpose:purpose,semantic_alignment_terms:[family,...purpose.split(' ')],applicable_stage_ids:stage.stage_id?[stage.stage_id]:[],environment_ids:stage.environment_ids||[],product_visibility:(graphic||CONTEXT.has(family)||family==='ATMOSPHERIC_INTERSTITIAL'?'NONE':family==='COMPONENT_MACRO'?'DETAIL_ONLY':family==='ASSEMBLY_PROCESS'?'PARTIAL':'FULL') as ProductVisibility,required_product_state_code:null,facility_claim_status:'CONTEXTUAL_INDUSTRIAL_VISUAL',reference_asset_ids:[],preferred_media_routes:['GENERATED_T2V'],generation_permission:'T2V_ALLOWED',exact_factory_claim_allowed:false,preferred_shot_scales:[],preferred_camera_movements:[],minimum_usable_duration_seconds:0,preferred_duration_seconds:10,maximum_duration_seconds:10,must_show:[],must_not_show:['readable text','invented logos','unsupported facility identity'],continuity_requirements:[],negative_constraints:[]} as V2VisualBeat;
-    normalized.push({chapter:handoff.visual_story_plan.chapters[0]||null,beat,treatment:treatmentFor(beat),sourceBeatId:beat.beat_id});
+    const visual_family:VisualFamily=beat.visual_family==='ARCHIVAL_REFERENCE'
+      ?beat.product_visibility==='DETAIL_ONLY'?'COMPONENT_MACRO':beat.product_visibility==='PARTIAL'?'ASSEMBLY_PROCESS':'HERO_PRODUCT'
+      :beat.visual_family;
+    const contextual:V2VisualBeat={...beat,beat_id:`${beat.beat_id}__T2V_SAFE`,visual_family,narrative_purpose:`Show a generic non-identifying visual for this supported concept: ${beat.narrative_purpose}`,reference_asset_ids:[],preferred_media_routes:['GENERATED_T2V'],generation_permission:'T2V_ALLOWED',exact_factory_claim_allowed:false,must_not_show:[...beat.must_not_show,'exact event recreation','identifiable location','invented markings or proprietary detail']};
+    return {chapter,beat:contextual,treatment:treatmentFor(contextual),sourceBeatId:contextual.beat_id};
   });
   return normalized;
 }
@@ -224,6 +206,108 @@ function legacyCandidates(topic: TopicBrief): Candidate[] {
 
 function runLength<T>(items: T[], value: T): number { let count=0; for(let i=items.length-1;i>=0&&items[i]===value;i--) count++; return count; }
 
+const CHAPTER_NUMBER_WORDS:Record<string,number>={one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10};
+function explicitChapterIndex(text:string):number|null{
+  const match=text.toLowerCase().match(/\bchapter\s+(?:(\d{1,2})|(one|two|three|four|five|six|seven|eight|nine|ten))\b/);
+  if(!match)return null;
+  const number=match[1]?Number(match[1]):CHAPTER_NUMBER_WORDS[match[2]];
+  return Number.isInteger(number)&&number>0?number-1:null;
+}
+function chapterSearchText(chapter:V2Chapter):string{
+  return [chapter.chapter_name,chapter.narrative_goal,chapter.chapter_question,chapter.chapter_payoff,chapter.opening_rehook_intent,...chapter.visual_beats.flatMap(beat=>[beat.beat_name,beat.narrative_purpose,...beat.semantic_alignment_terms])].filter(Boolean).join(' ');
+}
+function alignScenesToChapters(handoff:VisualProductionHandoffV2|null,scenes:TimedScene[]):Array<V2Chapter|null>{
+  const chapters=handoff?.visual_story_plan?.chapters||[];
+  if(!chapters.length)return scenes.map(()=>null);
+  let current=0;const hasExplicit=scenes.some(scene=>explicitChapterIndex(scene.text)!==null);
+  return scenes.map(scene=>{
+    const explicit=explicitChapterIndex(scene.text);
+    if(explicit!==null&&explicit>=current&&explicit<chapters.length)current=explicit;
+    else if(!hasExplicit&&explicit===null&&current<chapters.length-1){
+      const vo=tokenize(scene.text),currentScore=overlap(vo,tokenize(chapterSearchText(chapters[current])));
+      const nextScore=overlap(vo,tokenize(chapterSearchText(chapters[current+1])));
+      if(nextScore>=4&&nextScore>=currentScore+3)current++;
+    }
+    return chapters[current];
+  });
+}
+const beatSemanticScore=(scene:TimedScene,beat:V2VisualBeat)=>overlap(tokenize(scene.text),tokenize(`${beat.beat_name} ${beat.narrative_purpose} ${beat.semantic_alignment_terms.join(' ')}`));
+function facilityCueScore(text:string):number{
+  const value=text.toLowerCase();
+  return ((value.match(/\b(plant|facility|production site|manufacturing site|assembly space|production capacity|factory expansion|industrial complex|location)\b/g)||[]).length*5)
+    +((value.match(/\b(factory scale|industrial scale|manufacturing place|assembly hall|factory building)\b/g)||[]).length*3);
+}
+function operationalCueScore(text:string):number{
+  const value=text.toLowerCase();
+  return (value.match(/\b(begins? to roll|accelerates?|lifts? from the ground|reaches? the runway|runway acceleration|taxi(?:s|es|ing)|takeoff|airborne|flight loads?|controlled flight|flyby|flies|flying|rotation tests?|controlled climb|controlled turn|bank(?:ing)? pass|maneuver(?:ing)?|landing approach|touchdown|rollout|hover(?:ing)?|ground movement)\b/g)||[]).length;
+}
+function graphicCueScore(text:string):number{
+  const value=text.toLowerCase();
+  return (value.match(/\b(relationship|geometry|alignment error|propagat|converge|symmetry|spacing|signal chain|control chain|data flow|data links?|electronic commands?|communicat|flight control|airflow path|heat flow|feeds? a corresponding|hidden network|layer|cross.section|compare|comparison|progressively become|internal sequence)\b/g)||[]).length;
+}
+function atmosphericCueScore(text:string):number{
+  return (text.toLowerCase().match(/\b(dawn|dusk|night|sunrise|sunset|rain|snow|fog|mist|cloud|weather|light shifts?|heat haze|steam|dust|sparks?|vibration|powered equipment ambience|industrial atmosphere)\b/g)||[]).length;
+}
+function isLifecycleRecap(text:string):boolean{
+  return /\b(central question|whole manufacturing sequence|each stage|building the central structure|joining the airframe|installing propulsion|connecting electronics|closing the surface|chain of controlled decisions|factories,? systems and engineering|another aircraft to follow)\b/i.test(text);
+}
+function familyCueScore(text:string,family:VisualFamily):number{
+  const value=text.toLowerCase(),count=(pattern:RegExp)=>(value.match(pattern)||[]).length;
+  if(family==='ASSEMBLY_PROCESS')return count(/\b(assembly|assemble|install|join|connect|closure|closing|panel|structural section|interface|chain of controlled decisions)\b/g);
+  if(family==='MACHINERY_ACTION')return count(/\b(position|lower|lift|crane|robotic|tooling|fixture|engine bay|controlled handling)\b/g);
+  if(family==='MEASUREMENT_AND_CALIBRATION'||family==='QUALITY_CONTROL')return count(/\b(measure|calibrat|alignment check|reference point|symmetry check|inspect|verification|gauge)\b/g);
+  if(family==='COMPONENT_LOGISTICS'||family==='MATERIAL_FLOW')return count(/\b(transport|move(?:d)? into|delivered component|logistics|forklift)\b/g);
+  if(family==='WORKER_POV'||family==='TOOL_LEVEL_DETAIL'||family==='COMPONENT_MACRO')return count(/\b(technician|worker|inspect|diagnosis|corrective work|open access|connector|detail)\b/g);
+  if(family==='FACTORY_INTERIOR_WIDE')return count(/\b(assembly hall|test hall|production line|assembly space|testing capacity|factory interior|factories,? systems and engineering)\b/g);
+  if(family==='HERO_PRODUCT')return count(/\b(finished fighter|finished aircraft|externally complete|completed external form|delivery announcement|looks ready|recognisable|visible result)\b/g);
+  if(family==='STATIC_GROUND_TEST')return count(/\b(ground check|power.on|engine start|restrained|static inspection|test isolates?|brakes and engine operation)\b/g);
+  if(OPERATIONAL.has(family))return operationalCueScore(text);
+  return 0;
+}
+function selectAerialScene(scenes:TimedScene[],chapterAssignments:Array<V2Chapter|null>,candidates:Candidate[]):number|null{
+  let best:{number:number;score:number}|null=null;
+  scenes.forEach((scene,index)=>{
+    const chapter=chapterAssignments[index];
+    const aerials=candidates.filter(candidate=>candidate.chapter?.chapter_id===chapter?.chapter_id&&candidate.beat.visual_family==='FACTORY_AERIAL');
+    const facility=facilityCueScore(scene.text);
+    if(!aerials.length||facility<4)return;
+    const semantic=Math.max(...aerials.map(candidate=>beatSemanticScore(scene,candidate.beat)));
+    const score=facility*10+semantic*4;
+    if(!best||score>best.score)best={number:scene.number,score};
+  });
+  return best?.number||null;
+}
+function selectGraphicScenes(scenes:TimedScene[],chapterAssignments:Array<V2Chapter|null>,candidates:Candidate[]):Map<number,string>{
+  const eligible:Array<{number:number;beatId:string;chapterId:string;score:number}>=[];
+  scenes.forEach((scene,index)=>{
+    const chapter=chapterAssignments[index];
+    const graphics=candidates.filter(candidate=>(chapter?candidate.chapter?.chapter_id===chapter.chapter_id:true)&&GRAPHIC.has(candidate.beat.visual_family));
+    if(!graphics.length)return;
+    const ranked=graphics.map(candidate=>({candidate,semantic:beatSemanticScore(scene,candidate.beat)})).sort((a,b)=>b.semantic-a.semantic);
+    const best=ranked[0],cue=graphicCueScore(scene.text);
+    if(best.semantic<2||(cue<1&&best.semantic<4))return;
+    eligible.push({number:scene.number,beatId:best.candidate.sourceBeatId,chapterId:chapter?.chapter_id||'LEGACY_DOCUMENTARY',score:best.semantic*6+cue*8});
+  });
+  const runtime=scenes.at(-1)?.end||0,maxGraphics=Math.max(1,Math.floor(runtime/180));
+  const selected=new Map<number,string>(),usedChapters=new Set<string>();
+  eligible.sort((a,b)=>b.score-a.score||a.number-b.number).forEach(item=>{
+    if(selected.size>=maxGraphics||usedChapters.has(item.chapterId)||[...selected.keys()].some(number=>Math.abs(number-item.number)<6))return;
+    selected.set(item.number,item.beatId);usedChapters.add(item.chapterId);
+  });
+  return selected;
+}
+
+function semanticFallbackCandidate(chapter:V2Chapter|null,candidates:Candidate[],topic:TopicBrief):Candidate{
+  const seed=candidates.find(candidate=>candidate.chapter?.chapter_id===chapter?.chapter_id)||candidates[0];
+  if(seed){
+    const stage=seed.beat.applicable_stage_ids[0]||chapter?.applicable_production_stage_ids[0]||topic.lifecycle_stages?.[0]?.stage_id||'STAGE_01';
+    const environment=seed.beat.environment_ids[0]||topic.lifecycle_stages?.find(item=>item.stage_id===stage)?.environment_ref||topic.environments[0]?.environment_id||'ENV_01';
+    const beat:V2VisualBeat={...seed.beat,beat_id:`${chapter?.chapter_id||'LEGACY'}__SEMANTIC_FALLBACK`,beat_name:'Narration-matched manufacturing evidence',story_function:'EXPLAIN_PROCESS',visual_family:'ASSEMBLY_PROCESS',narrative_purpose:'Show the physical manufacturing subject, component, interface, or test described by this narration without changing location or lifecycle state.',semantic_alignment_terms:['manufacturing','assembly','component','interface','test'],applicable_stage_ids:[stage],environment_ids:[environment],product_visibility:'PARTIAL',reference_asset_ids:[],preferred_media_routes:['GENERATED_T2V'],generation_permission:'T2V_ALLOWED',exact_factory_claim_allowed:false,must_show:[],must_not_show:[...seed.beat.must_not_show,'deployed product footage unrelated to the narration','unassigned factory aerial','unassigned technical graphic']};
+    return {chapter,beat,treatment:'LIVE_ACTION_T2V',sourceBeatId:beat.beat_id};
+  }
+  throw new Error('The production handoff does not contain any visual beats.');
+}
+
 export function buildDocumentaryScenePlan(topic: TopicBrief, scenes: TimedScene[]): PlannedScene[] {
   const handoff = isV2(topic) ? topic._production_handoff : null;
   const operationalEligible=isOperationallyMobileProduct(topic);
@@ -231,53 +315,68 @@ export function buildDocumentaryScenePlan(topic: TopicBrief, scenes: TimedScene[
   const sourceCandidates = handoff ? candidatesFromV2(handoff) : legacyCandidates(topic);
   const candidates=sourceCandidates.filter(candidate=>operationalEligible||!OPERATIONAL.has(candidate.beat.visual_family)||!candidate.sourceBeatId.startsWith('SYNTH_'));
   const stages = handoff?.production_stages || [];
+  const chapterAssignments=alignScenesToChapters(handoff,scenes);
+  const aerialScene=selectAerialScene(scenes,chapterAssignments,candidates);
+  const graphicScenes=selectGraphicScenes(scenes,chapterAssignments,candidates);
+  const beatOrders=new Map(candidates.map(candidate=>[candidate.sourceBeatId,candidate.beat.beat_order]));
+  const chapterSceneTotals=new Map<string,number>();
+  chapterAssignments.forEach(chapter=>{const id=chapter?.chapter_id||'LEGACY_DOCUMENTARY';chapterSceneTotals.set(id,(chapterSceneTotals.get(id)||0)+1);});
+  const chapterSceneSeen=new Map<string,number>();
   const plan: PlannedScene[] = [];
-  let lastResetEnd = 0;
-  let lastOperationalEnd=0;
   let operationalCount=0;
-  const desiredOpening = (index:number, family:VisualFamily) => operationalEligible&&index===0?OPERATIONAL.has(family):index===1?PROCESS.has(family):operationalEligible&&index===2?OPERATIONAL.has(family):index===3?CONTEXT.has(family):index===4?RESET.has(family):operationalEligible&&index===5?OPERATIONAL.has(family):false;
   for (let i=0;i<scenes.length;i++) {
-    const scene=scenes[i], vo=tokenize(scene.text), progress=scenes.length<=1?0:i/(scenes.length-1);
-    const expectedStage=stages[Math.min(stages.length-1,Math.floor(progress*Math.max(stages.length,1)))];
-    const recentFamilies=plan.slice(-2).map(x=>x.visual_family), recentVisibility=plan.slice(-2).map(x=>x.product_visibility), recentEnvs=plan.slice(-3).map(x=>x.environment_ref),recentOperational=plan.slice(-2).map(x=>OPERATIONAL.has(x.visual_family));
-    const scored=candidates.map((candidate, order) => {
+    const scene=scenes[i],vo=tokenize(scene.text),chapter=chapterAssignments[i],chapterId=chapter?.chapter_id||'LEGACY_DOCUMENTARY';
+    const seen=(chapterSceneSeen.get(chapterId)||0)+1;chapterSceneSeen.set(chapterId,seen);
+    const chapterProgress=(seen-1)/Math.max((chapterSceneTotals.get(chapterId)||1)-1,1);
+    const inChapter=candidates.filter(candidate=>chapter?candidate.chapter?.chapter_id===chapter.chapter_id:true);
+    const narrativePool=isLifecycleRecap(scene.text)?candidates.filter(candidate=>!CONTEXT.has(candidate.beat.visual_family)&&!GRAPHIC.has(candidate.beat.visual_family)&&!OPERATIONAL.has(candidate.beat.visual_family)):inChapter;
+    const operationalRelevant=operationalCueScore(scene.text)>0;
+    const selectedGraphic=graphicScenes.get(scene.number);
+    const eligible=narrativePool.filter(candidate=>{
+      const family=candidate.beat.visual_family;
+      if(family==='FACTORY_AERIAL')return scene.number===aerialScene;
+      if(GRAPHIC.has(family))return candidate.sourceBeatId===selectedGraphic;
+      if(OPERATIONAL.has(family))return operationalRelevant;
+      if(family==='ATMOSPHERIC_INTERSTITIAL')return atmosphericCueScore(scene.text)>0;
+      if(family==='CHAPTER_TRANSITION')return explicitChapterIndex(scene.text)!==null;
+      return true;
+    });
+    const safePool=eligible.length?eligible:narrativePool.filter(candidate=>!CONTEXT.has(candidate.beat.visual_family)&&!GRAPHIC.has(candidate.beat.visual_family)&&!OPERATIONAL.has(candidate.beat.visual_family));
+    const pool=safePool.length?safePool:[semanticFallbackCandidate(chapter,candidates,topic)];
+    const previous=plan.at(-1);
+    const previousOrder=previous?beatOrders.get(previous.beat_id):undefined;
+    const scored=pool.map(candidate => {
       const beat=candidate.beat;
       const words=tokenize(`${beat.beat_name} ${beat.narrative_purpose} ${beat.semantic_alignment_terms.join(' ')}`);
-      const stage=beat.applicable_stage_ids.includes(expectedStage?.stage_id) ? expectedStage?.stage_id : beat.applicable_stage_ids[0] || expectedStage?.stage_id || topic.lifecycle_stages?.[0]?.stage_id || 'STAGE_01';
+      const stage=beat.applicable_stage_ids[0]||chapter?.applicable_production_stage_ids[0]||topic.lifecycle_stages?.[0]?.stage_id||'STAGE_01';
       const stageData=stages.find(x=>x.stage_id===stage);
       const env=beat.environment_ids[0] || stageData?.environment_ids[0] || topic.lifecycle_stages?.find(x=>x.stage_id===stage)?.environment_ref || topic.environments[0]?.environment_id || 'ENV_01';
-      let score=overlap(vo,words)*8 - Math.abs((order/Math.max(candidates.length-1,1))-progress)*3;
-      if (stage===expectedStage?.stage_id) score+=3;
-      if(scene.duration<beat.minimum_usable_duration_seconds||scene.duration>beat.maximum_duration_seconds)score-=120;
-      if (recentFamilies.length===2&&recentFamilies.every(x=>x===beat.visual_family)) score-=1000;
-      if (beat.product_visibility==='FULL'&&recentVisibility.length===2&&recentVisibility.every(x=>x==='FULL')) score-=1000;
-      if (recentEnvs.length===3&&recentEnvs.every(x=>x===env)) score-=1000;
-      if (i<10&&desiredOpening(i,beat.visual_family)) score+=2000;
-      if(recentOperational.length===2&&recentOperational.every(Boolean)&&OPERATIONAL.has(beat.visual_family))score-=1000;
-      if (i<10&&new Set(plan.slice(0,10).map(x=>x.visual_family)).size<5&&!plan.slice(0,10).some(x=>x.visual_family===beat.visual_family)) score+=120;
-      if (i<10&&beat.product_visibility==='FULL'&&plan.filter(x=>x.product_visibility==='FULL').length>=3) score-=500;
-      if (scene.end-lastResetEnd>=35&&RESET.has(beat.visual_family)) score+=180;
-      if (scene.end-lastResetEnd>=60&&!RESET.has(beat.visual_family)) score-=500;
-      if (plan.slice(-6).every(x=>x.visual_family!==beat.visual_family)) score+=15;
-      if(scene.end>=30&&candidate.treatment==='STATIC_GRAPHIC_T2V'&&!plan.some(x=>x.visual_treatment==='STATIC_GRAPHIC_T2V'))score+=220;
-      if(scene.end>=30&&candidate.treatment==='MOTION_GRAPHIC_T2V'&&!plan.some(x=>x.visual_treatment==='MOTION_GRAPHIC_T2V'))score+=220;
-      if(operationalEligible&&scene.end-lastOperationalEnd>=60&&OPERATIONAL.has(beat.visual_family))score+=650;
-      if(operationalEligible&&scene.end-lastOperationalEnd>=90&&!OPERATIONAL.has(beat.visual_family))score-=1200;
-      const targets=(handoff as any)?.visual_story_plan?.visual_balance_targets;const target=targets?.[balanceKey(beat.visual_family)];
-      if(target){const used=plan.filter(x=>balanceKey(x.visual_family)===balanceKey(beat.visual_family)).length;const actual=plan.length?used/plan.length*100:0;const midpoint=(Number(target.minimum)+Number(target.maximum))/2;if(actual<midpoint)score+=Math.min(45,(midpoint-actual)*1.5);else if(actual>Number(target.maximum))score-=35;}
-      const minuteFamilies=new Set(plan.filter(x=>x.number>=Math.max(1,scene.number-Math.ceil(60/Math.max(scene.duration,1)))).map(x=>x.visual_family));
-      if(minuteFamilies.size<3&&!minuteFamilies.has(beat.visual_family))score+=80;
+      const semantic=overlap(vo,words);
+      const orderRange=Math.max(...pool.map(item=>item.beat.beat_order),1);
+      let score=semantic*14-Math.abs((beat.beat_order/orderRange)-chapterProgress)*5;
+      score+=familyCueScore(scene.text,beat.visual_family)*9;
+      if(scene.duration<beat.minimum_usable_duration_seconds)score-=30;
+      else if(scene.duration>beat.maximum_duration_seconds)score-=Math.min(12,(scene.duration-beat.maximum_duration_seconds)*3);
+      if(candidate.sourceBeatId===selectedGraphic)score+=500;
+      if(scene.number===aerialScene&&beat.visual_family==='FACTORY_AERIAL')score+=500;
+      if(operationalRelevant&&OPERATIONAL.has(beat.visual_family))score+=35;
+      if(previous?.chapter_id===chapterId){
+        if(previous.beat_id===candidate.sourceBeatId)score+=runLength(plan.map(item=>item.beat_id),candidate.sourceBeatId)<4?22:-12;
+        else if(previous.visual_family===beat.visual_family)score+=12;
+        if(previous.environment_ref===env)score+=5;
+        if(previousOrder!==undefined&&beat.beat_order<previousOrder)score-=28;
+      }
+      if(runLength(plan.map(item=>item.visual_family),beat.visual_family)>=5)score-=12;
       return {candidate,stage,env,score};
     }).sort((a,b)=>b.score-a.score||a.candidate.beat.beat_order-b.candidate.beat.beat_order);
     const chosen=scored[0];
     const beat=chosen.candidate.beat;
-    if(RESET.has(beat.visual_family)) lastResetEnd=scene.end;
     const isOperational=OPERATIONAL.has(beat.visual_family);
-    if(isOperational){lastOperationalEnd=scene.end;operationalCount++;}
-    const showdownRole=aviationEligible?showdownRoleFor(i,scenes.length,beat.visual_family,operationalCount):null;
+    if(isOperational)operationalCount++;
+    const showdownRole=aviationEligible?showdownRoleFor(scene,scenes.length,beat.visual_family,operationalCount):null;
     const plannedVisibility:ProductVisibility=showdownRole==='COCKPIT_IMMERSION'?'DETAIL_ONLY':beat.product_visibility;
     const planItem:PlannedScene={
-      number:scene.number, chapter_id:chosen.candidate.chapter?.chapter_id || 'LEGACY_DOCUMENTARY',
+      number:scene.number, chapter_id:chapterId,
       beat_id:chosen.candidate.sourceBeatId, visual_family:beat.visual_family,
       story_function:beat.story_function, visual_treatment:chosen.candidate.treatment,
       product_visibility:plannedVisibility, stage_id:chosen.stage, environment_ref:chosen.env,

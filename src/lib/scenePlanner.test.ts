@@ -15,17 +15,14 @@ const operationalTopic=(productClass='combat helicopter',restricted=false)=>{
   return normalizeProductionHandoff(raw);
 };
 
-test('enforces documentary variety for the opening and full timeline',()=>{
+test('preserves coherent manufacturing runs instead of forcing a new family every two scenes',()=>{
   const topic=normalizeProductionHandoff(JSON.parse(JSON.stringify(template)));
-  const plan=buildDocumentaryScenePlan(topic,scenes(75));
-  assert.equal(plan.length,75);
-  assert.ok(new Set(plan.slice(0,10).map(x=>x.visual_family)).size>=5);
-  assert.ok(plan.slice(0,10).filter(x=>x.product_visibility==='FULL').length<=3);
-  assert.ok(plan.slice(0,10).some(x=>['FACTORY_AERIAL','FACTORY_EXTERIOR','FACILITY_APPROACH'].includes(x.visual_family)));
-  assert.ok(plan.slice(0,10).some(x=>['ASSEMBLY_PROCESS','COMPONENT_MACRO','WORKER_POV','MACHINERY_ACTION'].includes(x.visual_family)));
-  assert.ok(plan.slice(0,10).some(x=>['STATIC_GRAPHIC_T2V','MOTION_GRAPHIC_T2V'].includes(x.visual_treatment)||x.visual_family==='ATMOSPHERIC_INTERSTITIAL'));
-  for(let i=2;i<plan.length;i++)assert.ok(!(plan[i].visual_family===plan[i-1].visual_family&&plan[i].visual_family===plan[i-2].visual_family));
-  for(let i=2;i<plan.length;i++)assert.ok(!(plan[i].product_visibility==='FULL'&&plan[i-1].product_visibility==='FULL'&&plan[i-2].product_visibility==='FULL'));
+  const input=Array.from({length:12},(_,i)=>({number:i+1,start:i*10,end:(i+1)*10,duration:10,text:`Technicians assemble structural component ${i+1}, preserve its interface, and continue the same manufacturing sequence.`,silent:false}));
+  const plan=buildDocumentaryScenePlan(topic,input);
+  assert.equal(plan.length,12);
+  assert.ok(plan.every(item=>item.visual_family==='ASSEMBLY_PROCESS'));
+  assert.ok(plan.every(item=>item.visual_treatment==='LIVE_ACTION_T2V'));
+  assert.ok(plan.every(item=>item.beat_id.endsWith('__SEMANTIC_FALLBACK')));
 });
 
 test('substitutes a reference-only beat with a T2V-safe plan item',()=>{
@@ -41,29 +38,47 @@ test('plans 8-second and partial-duration windows without changing scene numbers
   assert.deepEqual(buildDocumentaryScenePlan(topic,input).map(x=>x.number),[1,2,3,4]);
 });
 
-test('guarantees operational footage in the opening and at recurring intervals for aircraft',()=>{
-  const topic=operationalTopic(),plan=buildDocumentaryScenePlan(topic,scenes(75));const operational=(item:any)=>['OPERATIONAL_CONTEXT','DYNAMIC_TESTING','DELIVERY_AND_ROLLOUT'].includes(item.visual_family);
+test('uses operational footage only for VO that describes active operation',()=>{
+  const topic=operationalTopic();
+  const input=[
+    'A finished HX-1 begins to roll across the test apron.',
+    'The aircraft accelerates and lifts from the ground into a controlled climb.',
+    'Earlier, technicians assemble the unfinished central structure inside the factory.',
+    'Workers install a structural component and preserve its exposed interface.',
+    'The component is measured before the next panel is attached.',
+    'The same assembly sequence continues with controlled tooling.',
+  ].map((text,i)=>({number:i+1,start:i*10,end:(i+1)*10,duration:10,text,silent:false}));
+  const plan=buildDocumentaryScenePlan(topic,input);const operational=(item:any)=>['OPERATIONAL_CONTEXT','DYNAMIC_TESTING','DELIVERY_AND_ROLLOUT'].includes(item.visual_family);
   assert.equal(isOperationallyMobileProduct(topic),true);
-  assert.ok(plan.slice(0,3).some(operational));assert.ok(plan.slice(0,10).filter(operational).length>=2);
-  assert.ok(plan.slice(0,10).some(item=>['FACTORY_AERIAL','FACTORY_EXTERIOR','FACILITY_APPROACH'].includes(item.visual_family)));
-  assert.ok(plan.slice(0,10).some(item=>['ASSEMBLY_PROCESS','COMPONENT_MACRO','MACHINERY_ACTION','QUALITY_CONTROL'].includes(item.visual_family)));
-  const numbers=plan.filter(operational).map(item=>item.number);for(let i=1;i<numbers.length;i++)assert.ok(numbers[i]-numbers[i-1]<=9);
-  for(let i=2;i<plan.length;i++)assert.ok(!(operational(plan[i])&&operational(plan[i-1])&&operational(plan[i-2])));
-  assert.ok(plan.filter(operational).every(item=>item.state==='C'));
+  assert.deepEqual(plan.map(operational),[true,true,false,false,false,false]);
   assert.equal(plan[0].showdown_role,'GROUND_REVEAL');
   assert.equal(plan[0].camera_platform,'GROUND_TRIPOD');
-  assert.equal(plan[1].showdown_role,'HUMAN_SCALE');
-  assert.equal(plan[2].showdown_role,'DEPARTURE');
-  assert.equal(plan[2].camera_platform,'RUNWAY_LONG_LENS');
-  assert.ok(plan.slice(5,10).some(item=>item.showdown_role==='COCKPIT_IMMERSION'||item.showdown_role==='AIRBORNE_ESTABLISHMENT'));
-  assert.ok(plan.some(item=>item.showdown_role==='SECOND_PEAK'));
-  assert.ok(plan.some(item=>item.showdown_role==='CONTROLLED_RETURN'));
-  assert.ok(plan.filter(item=>item.showdown_role==='COCKPIT_IMMERSION').every(item=>item.product_visibility==='DETAIL_ONLY'));
+  assert.equal(plan[1].showdown_role,'DEPARTURE');
+  assert.equal(plan[1].camera_platform,'RUNWAY_LONG_LENS');
+  assert.ok(plan.slice(2).every(item=>item.showdown_role===null));
 });
 
 test('creates T2V-safe contextual alternatives for reference-only operational events',()=>{
-  const plan=buildDocumentaryScenePlan(operationalTopic('fighter aircraft',true),scenes(12));const opening=plan.find(item=>item.visual_family==='OPERATIONAL_CONTEXT');
-  assert.ok(opening);assert.match(opening!.beat_id,/__T2V_SAFE$/);assert.ok(opening!.number<=3);
+  const input=[{number:1,start:0,end:10,duration:10,text:'The fighter accelerates for takeoff and lifts into a controlled climb.',silent:false}];
+  const plan=buildDocumentaryScenePlan(operationalTopic('fighter aircraft',true),input);const opening=plan.find(item=>item.visual_family==='OPERATIONAL_CONTEXT');
+  assert.ok(opening);assert.match(opening!.beat_id,/__T2V_SAFE$/);
+});
+
+test('allows at most one factory aerial and only where the VO identifies the facility',()=>{
+  const topic=operationalTopic();
+  const input=[
+    'Technicians assemble the central structure and preserve every interface.',
+    'Production continues at the HX manufacturing plant and its expanded assembly facility.',
+    'Workers install the next component inside the same hall.',
+    'The airframe receives outer panels and remains on its assembly fixture.',
+    'Quality teams inspect the joined structure.',
+    'The manufacturing sequence continues through controlled tooling.',
+  ].map((text,i)=>({number:i+1,start:i*10,end:(i+1)*10,duration:10,text,silent:false}));
+  const plan=buildDocumentaryScenePlan(topic,input);
+  const aerials=plan.filter(item=>item.visual_family==='FACTORY_AERIAL');
+  assert.equal(aerials.length,1);
+  assert.equal(aerials[0].number,2);
+  assert.ok(plan.filter((_,index)=>index!==1).every(item=>item.visual_family!=='FACTORY_AERIAL'));
 });
 
 test('detects aircraft but does not classify a stationary industrial product as mobile',()=>{
@@ -91,10 +106,15 @@ test('classifies text-free technical graphic subtypes from VO and beat semantics
 });
 
 test('stores a graphic specification on every planned static or motion graphic',()=>{
-  const topic=normalizeProductionHandoff(JSON.parse(JSON.stringify(template)));
-  const plan=buildDocumentaryScenePlan(topic,scenes(35));
+  const raw:any=JSON.parse(JSON.stringify(template));
+  const base=raw.visual_story_plan.chapters[0].visual_beats[0];
+  raw.visual_story_plan.chapters[0].visual_beats.push({...base,beat_id:'CH01_GFX',beat_order:2,beat_name:'Interface alignment relationship',story_function:'EXPLAIN_ARCHITECTURE',visual_family:'TECHNICAL_GRAPHIC',narrative_purpose:'Explain how alignment error propagates through connected structural interfaces',semantic_alignment_terms:['alignment','error','propagates','connected','interface'],product_visibility:'DETAIL_ONLY',preferred_media_routes:['GENERATED_T2V'],generation_permission:'T2V_ALLOWED'});
+  const topic=normalizeProductionHandoff(raw);
+  const input=scenes(35).map((scene,index)=>({...scene,text:index===17?'Alignment error propagates through every connected structural interface.':'Workers install and inspect the physical component inside the assembly hall.'}));
+  const plan=buildDocumentaryScenePlan(topic,input);
   const graphics=plan.filter(item=>item.visual_treatment==='STATIC_GRAPHIC_T2V'||item.visual_treatment==='MOTION_GRAPHIC_T2V');
-  assert.ok(graphics.length>0);
+  assert.equal(graphics.length,1);
+  assert.equal(graphics[0].number,18);
   assert.ok(graphics.every(item=>item.graphic_spec?.text_policy==='NO_GENERATED_TEXT'));
   assert.ok(plan.filter(item=>item.visual_treatment==='LIVE_ACTION_T2V').every(item=>item.graphic_spec===null));
 });
