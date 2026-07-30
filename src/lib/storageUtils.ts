@@ -42,6 +42,8 @@ export const saveProject = (state: AppState): string => {
     id,
     savedAt: now,
     createdAt
+    ,handoffMode:state.handoffMode
+    ,schemaVersion:state.schemaVersion
   };
   
   const indexEntry: SavedProject = {

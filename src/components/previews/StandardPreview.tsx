@@ -16,6 +16,7 @@ const JsonBlock = ({ value }: { value: unknown }) => (
 export const StandardPreview: React.FC<StandardPreviewProps> = ({ data }) => {
   if (!data) return null;
   const stages = data.lifecycle_stages || [];
+  const engineering=(data._production_handoff as any)?.schema?.version==='3.0.0';
   const environments = data.environments || [];
   const negatives = getNegativePromptGlobal(data);
   const qcText = JSON.stringify(data.quality_control || {});
@@ -26,7 +27,7 @@ export const StandardPreview: React.FC<StandardPreviewProps> = ({ data }) => {
       <div className="border-b border-border/20 pb-4">
         <div className="flex flex-wrap gap-2 mb-3">
           <Badge variant="outline" className="font-mono text-[10px]">Schema {data.schema_version || 'legacy'}</Badge>
-          <Badge variant="outline" className="font-mono text-[10px]">{getLifecycleStageCount(data)} stages</Badge>
+          {!engineering&&<Badge variant="outline" className="font-mono text-[10px]">{getLifecycleStageCount(data)} stages</Badge>}
           <Badge variant="outline" className={`font-mono text-[10px] ${qcPass ? 'text-green-400 border-green-500/30' : 'text-amber-400 border-amber-500/30'}`}>
             QC {qcPass ? 'PASS/OK' : 'CHECK'}
           </Badge>
@@ -84,7 +85,7 @@ export const StandardPreview: React.FC<StandardPreviewProps> = ({ data }) => {
             </div>
           </section>
 
-          <section className="p-4 rounded-lg border border-border/20 bg-muted/10">
+          {!engineering&&<section className="p-4 rounded-lg border border-border/20 bg-muted/10">
             <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono block mb-2">Lifecycle Stages</span>
             <div className="space-y-3 max-h-[360px] overflow-y-auto pr-2">
               {stages.map((stage, idx) => (
@@ -101,7 +102,7 @@ export const StandardPreview: React.FC<StandardPreviewProps> = ({ data }) => {
                 </div>
               ))}
             </div>
-          </section>
+          </section>}
 
           <section className="p-4 rounded-lg border border-border/20 bg-muted/10">
             <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono block mb-1">Shot Plan + Quality Control</span>

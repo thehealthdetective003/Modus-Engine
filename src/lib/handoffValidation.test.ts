@@ -2,14 +2,15 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import template from '../schemas/Modus_Visual_Production_Handoff_V2_Template.json';
 import { LEGACY_PRODUCTION_TEMPLATE, normalizeProductionHandoff } from './productionTemplate';
-import { validateVisualProductionHandoff } from './handoffValidation';
+import { parseAndValidateHandoffJson, validateVisualProductionHandoff } from './handoffValidation';
+import { makeValidEngineeringHandoff } from '../testFixtures/engineeringV3';
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 
 test('bundled V2 template validates with two environments and one stage', () => {
   const result = validateVisualProductionHandoff(template);
   assert.equal(result.valid, true);
-  assert.equal(result.status, 'Valid V2');
+  assert.equal(result.status, 'Valid Manufacturing V2');
   assert.equal(template.environments.length, 2);
   assert.equal(template.production_stages.length, 1);
 });
@@ -30,7 +31,7 @@ test('V2 schema reports missing, enum, additional-property, ID, and version erro
   const unsupported: any = clone(template); unsupported.schema.version = '3.0.0';
   const unsupportedResult = validateVisualProductionHandoff(unsupported);
   assert.equal(unsupportedResult.valid, false);
-  assert.equal(unsupportedResult.format, 'unsupported');
+  assert.equal(unsupportedResult.format, 'mixed');
 });
 
 test('V2 semantic validation detects every duplicate ID family', () => {
@@ -85,6 +86,69 @@ test('normalization uses first V2 environment and preserves complete raw handoff
   const normalized = normalizeProductionHandoff(value);
   assert.equal(normalized.lifecycle_stages?.[0].environment_ref, 'ENV_FACTORY_AERIAL');
   assert.deepEqual(normalized._production_handoff, value);
-  assert.equal(validateVisualProductionHandoff(normalized).status, 'Valid V2');
+  assert.equal(validateVisualProductionHandoff(normalized).status, 'Valid Manufacturing V2');
   assert.deepEqual(JSON.parse(JSON.stringify(normalized))._production_handoff.visual_story_plan, value.visual_story_plan);
+});
+
+test('detects and validates a complete Engineering V3 handoff independently',()=>{
+  const value=makeValidEngineeringHandoff(),result=validateVisualProductionHandoff(value);
+  assert.equal(result.valid,true);
+  assert.equal(result.format,'v3');
+  assert.equal(result.mode,'ENGINEERING_V3');
+  assert.equal(result.status,'Valid Engineering V3');
+  assert.equal(result.schemaErrors.length,0);
+});
+
+test('reports syntax, unknown version, mixed-mode, and missing V3 fields separately',()=>{
+  const syntax=parseAndValidateHandoffJson('{"schema":');
+  assert.equal(syntax.result.syntaxErrors[0].code,'syntax');
+  const unknown:any=clone(makeValidEngineeringHandoff());unknown.schema.version='4.0.0';
+  assert.equal(validateVisualProductionHandoff(unknown).format,'unsupported');
+  const mixed:any=clone(makeValidEngineeringHandoff());mixed.production_stages=[];
+  assert.equal(validateVisualProductionHandoff(mixed).format,'mixed');
+  const missing:any=clone(makeValidEngineeringHandoff());delete missing.operational_states;
+  assert.ok(validateVisualProductionHandoff(missing).schemaErrors.some(error=>error.path==='/operational_states'));
+});
+
+test('V3 semantic validation rejects duplicate IDs, broken references, endpoints, order, and duration',()=>{
+  const value:any=clone(makeValidEngineeringHandoff());
+  value.engineering_systems.push(clone(value.engineering_systems[0]));
+  value.operational_states[0].environment_ids=['ENV_MISSING'];
+  value.system_relationships[0].to_system_id='SYS_MISSING';
+  value.concept_bridges[0].to_system_id='SYS_MISSING_BRIDGE';
+  value.visual_story_plan.chapters[0].visual_beats[0].preferred_duration_seconds=12;
+  value.visual_story_plan.chapters[0].visual_beats[0].maximum_duration_seconds=10;
+  const result=validateVisualProductionHandoff(value);
+  assert.equal(result.valid,false);
+  for(const expected of ['Duplicate system_id','ENV_MISSING','SYS_MISSING','SYS_MISSING_BRIDGE','minimum ≤ preferred ≤ maximum'])
+    assert.ok(result.errors.some(error=>error.message.includes(expected)),`missing ${expected}`);
+});
+
+test('V3 evidence and routing rules block unsupported exact and forbidden generation',()=>{
+  const referenceRequired:any=clone(makeValidEngineeringHandoff());
+  const beat=referenceRequired.visual_story_plan.chapters[0].visual_beats[0];
+  beat.generation_permission='REFERENCE_REQUIRED';beat.preferred_media_routes=['GENERATED_T2V'];
+  assert.ok(validateVisualProductionHandoff(referenceRequired).errors.some(error=>error.code==='routing'));
+
+  const notAllowed:any=clone(makeValidEngineeringHandoff());
+  notAllowed.evidence_boundaries.claims[0].visualization_permission='NOT_ALLOWED';
+  assert.ok(validateVisualProductionHandoff(notAllowed).errors.some(error=>error.message.includes('not allowed')));
+
+  const exact:any=clone(makeValidEngineeringHandoff());
+  exact.visual_story_plan.chapters[0].visual_beats[0].exact_event_or_location_claim_allowed=true;
+  assert.ok(validateVisualProductionHandoff(exact).errors.some(error=>error.message.includes('Exact event/location')));
+
+  const cutaway:any=clone(makeValidEngineeringHandoff());
+  cutaway.visual_story_plan.chapters[0].visual_beats[0].visual_family='SYSTEM_CUTAWAY';
+  cutaway.visual_story_plan.chapters[0].visual_beats[0].reference_asset_ids=[];
+  assert.ok(validateVisualProductionHandoff(cutaway).errors.some(error=>error.message.includes('internal cutaway')));
+});
+
+test('V3 requires four systems and meaningful beat alignment',()=>{
+  const value:any=clone(makeValidEngineeringHandoff());
+  value.engineering_systems=value.engineering_systems.slice(0,3);
+  value.visual_story_plan.chapters[0].visual_beats[0].semantic_alignment_terms=[];
+  const result=validateVisualProductionHandoff(value);
+  assert.ok(result.errors.some(error=>error.message.includes('at least four')));
+  assert.ok(result.errors.some(error=>error.message.includes('semantic-alignment')));
 });

@@ -172,7 +172,7 @@ export function SettingsPanel({ state, setState, open, onOpenChange }: SettingsP
             <div className="border-b border-border/10 pb-2">
               <span className="text-[10px] text-muted-foreground tracking-widest uppercase font-bold flex items-center gap-1.5">
                 <FileUp className="w-3.5 h-3.5" />
-                04 / PRODUCTION JSON TEMPLATE
+                04 / HANDOFF JSON TEMPLATE
               </span>
             </div>
             <div className="space-y-3 bg-muted/20 border border-border/40 p-4 rounded-lg">
@@ -191,7 +191,7 @@ export function SettingsPanel({ state, setState, open, onOpenChange }: SettingsP
                 </div>
               </div>
               <p className="text-[10px] text-muted-foreground leading-relaxed normal-case">
-                Importing replaces the blank Standard Lifecycle template and its generated research prompt. Filled handoff files are converted into the app's stage, environment, geometry-lock, continuity, and negative-prompt fields when loaded in Phase 1.
+                Importing replaces the blank handoff template and its generated research prompt. Manufacturing V2 and Engineering V3 remain independently validated and use separate planning semantics.
               </p>
               <div className="grid grid-cols-2 gap-2">
                 <Button variant="outline" size="sm" className="relative h-9 text-[10px] font-mono">
@@ -210,7 +210,7 @@ export function SettingsPanel({ state, setState, open, onOpenChange }: SettingsP
                           const parsed = JSON.parse(String(reader.result));
                           const result = validateVisualProductionHandoff(parsed);
                           setTemplateImportResult(result);
-                          if (!result.valid || (result.format !== 'v1' && result.format !== 'v2')) {
+                          if (!result.valid || !['v1','v2','v3'].includes(result.format)) {
                             const details = result.errors.slice(0, 3).map(item => `${item.path}: ${item.message}`).join(' ');
                             toast.error(`Template not activated (${result.status}). ${details}`);
                             return;

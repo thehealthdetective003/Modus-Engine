@@ -16,8 +16,10 @@ import { cn, copyToClipboard } from '@/lib/utils';
 import { normalizeTopicBrief, validateAdaptiveBrief, validateAdaptiveWarnings, getLifecycleStageCount, getNegativePromptGlobal } from '../lib/adaptiveSchema';
 import { StandardPreview } from './previews/StandardPreview';
 import { useSettings } from './SettingsContext';
-import { DEFAULT_PRODUCTION_TEMPLATE, isProductionHandoff, normalizeProductionHandoff, productionTemplatePrompt } from '../lib/productionTemplate';
-import { HandoffValidationResult, validateVisualProductionHandoff } from '../lib/handoffValidation';
+import { DEFAULT_PRODUCTION_TEMPLATE, normalizeVisualHandoff, productionTemplatePrompt } from '../lib/productionTemplate';
+import { HandoffValidationResult, parseAndValidateHandoffJson, validateVisualProductionHandoff } from '../lib/handoffValidation';
+import { EngineeringHandoffInspector } from './previews/EngineeringHandoffInspector';
+import type { VisualEngineeringHandoffV3 } from '../types/visualEngineeringV3';
 interface Phase1TopicProps {
   state: AppState;
   setState: React.Dispatch<React.SetStateAction<AppState>>;
@@ -82,16 +84,20 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
   };
   const handleImportBrief = async (file: File) => {
     try {
-      const parsed = JSON.parse(await file.text());
+      const fileText=await file.text();
+      const {data:parsed,result}=parseAndValidateHandoffJson(fileText);
+      if(!parsed){
+        setValidationResult(result);setError('Invalid JSON file. Check its syntax and try again.');
+        return;
+      }
       setJsonInput(JSON.stringify(parsed, null, 2));
       setShowPasteEditor(true);
-      const result = validateVisualProductionHandoff(parsed);
       setValidationResult(result);
       setIsValid(false); setParsedBrief(null); setError(null); setWarnings([]);
       if (result.valid) toast.success(`${result.status} imported. Validate and load it to continue.`);
       else {
-        setError('Invalid production JSON. Fix the listed errors before loading it.');
-        toast.error('Invalid production JSON. The current project was not changed.');
+        setError('Invalid handoff JSON. Fix the listed errors before loading it.');
+        toast.error('Invalid handoff JSON. The current project was not changed.');
       }
     } catch {
       setValidationResult(validateVisualProductionHandoff(null));
@@ -109,24 +115,23 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
       return;
     }
     try {
-      const parsed = JSON.parse(jsonInput);
-      const result = validateVisualProductionHandoff(parsed);
+      const {data:parsed,result}=parseAndValidateHandoffJson(jsonInput);
       setValidationResult(result);
-      if (!result.valid) {
-        setError('Invalid production JSON. Fix the listed schema or reference errors before loading it.');
+      if (!parsed||!result.valid) {
+        setError('Invalid handoff JSON. Fix the listed schema or reference errors before loading it.');
         return;
       }
-      const normalized = isProductionHandoff(parsed) ? normalizeProductionHandoff(parsed) : normalizeTopicBrief(parsed);
+      const normalized = ['v1','v2','v3'].includes(result.format) ? normalizeVisualHandoff(parsed) : normalizeTopicBrief(parsed);
       const missing = validateAdaptiveBrief(normalized);
       const adaptiveWarnings = validateAdaptiveWarnings(normalized);
       
       if (missing.length > 0) {
-        setWarnings([...missing.map(item => `Missing: ${item}`), ...adaptiveWarnings]);
+        setWarnings([...missing.map(item => `Missing: ${item}`), ...adaptiveWarnings,...result.warnings.map(item=>`${item.path}: ${item.message}`)]);
         // We still allow it if it's valid JSON, but user needs to be aware
         setParsedBrief(normalized as TopicBrief);
         setIsValid(true);
       } else {
-        setWarnings(adaptiveWarnings);
+        setWarnings([...adaptiveWarnings,...result.warnings.map(item=>`${item.path}: ${item.message}`)]);
         setParsedBrief(normalized as TopicBrief);
         setIsValid(true);
       }
@@ -141,6 +146,10 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
     setState((prev) => ({
       ...prev,
       topic: parsedBrief,
+      handoffMode:validationResult?.mode||'MANUFACTURING_V2',
+      schemaVersion:validationResult?.version||parsedBrief.schema_version||null,
+      rawHandoff:parsedBrief._production_handoff||null,
+      scenePlanFormatVersion:validationResult?.mode==='ENGINEERING_V3'?3:2,
       masterVoiceoverScript: parsedBrief.master_voiceover_script || '',
       projectName: parsedBrief.topic?.product || parsedBrief.topic?.title || "Untitled",
       plannedScenes: [], sceneDirections: [], visualPrompts: [], demoScenes: [], demoSceneNumbers: [], demoState: 'idle',
@@ -191,7 +200,7 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
       <div className="space-y-4">
         <div className="grid sm:grid-cols-[1fr_auto] gap-3">
           <Button className="relative h-14 bg-amber-500 hover:bg-amber-600 text-amber-950 font-bold tracking-widest">
-            <FileJson className="h-5 w-5 mr-2"/>IMPORT PRODUCTION JSON
+            <FileJson className="h-5 w-5 mr-2"/>IMPORT HANDOFF JSON
             <input type="file" accept=".json,application/json" className="absolute inset-0 opacity-0 cursor-pointer" onChange={event=>{const file=event.target.files?.[0]; if(file) handleImportBrief(file); event.currentTarget.value='';}}/>
           </Button>
           <Button variant="outline" className="h-14" onClick={()=>setShowPasteEditor(value=>!value)}>{showPasteEditor?'HIDE JSON EDITOR':'PASTE JSON (OPTIONAL)'}</Button>
@@ -312,9 +321,14 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
                       <Badge variant="outline" className="font-mono text-[10px] border-blue-500/30 text-blue-400 bg-blue-500/5">{source?.environments?.length || 0} ENVIRONMENTS</Badge>
                     </>;
                   })()}
-                  <Badge variant="outline" className="font-mono text-[10px] border-amber-500/30 text-amber-400 bg-amber-500/5">
+                  {validationResult?.format === 'v3' && (() => {
+                    const source=parsedBrief._production_handoff as VisualEngineeringHandoffV3;
+                    const chapters=source.visual_story_plan.chapters,beatCount=chapters.reduce((total,chapter)=>total+chapter.visual_beats.length,0);
+                    return <><Badge variant="outline" className="font-mono text-[10px] border-violet-500/30 text-violet-400 bg-violet-500/5">LOCKED · ENGINEERING V3 · {validationResult.version}</Badge><Badge variant="outline">{source.evidence_boundaries.claims.length} CLAIMS</Badge><Badge variant="outline">{source.engineering_systems.length} SYSTEMS</Badge><Badge variant="outline">{source.operational_states.length} STATES</Badge><Badge variant="outline">{source.system_relationships.length} RELATIONSHIPS</Badge><Badge variant="outline">{source.concept_bridges.length} BRIDGES</Badge><Badge variant="outline">{source.environments.length} ENVIRONMENTS</Badge><Badge variant="outline">{chapters.length} CHAPTERS</Badge><Badge variant="outline">{beatCount} BEATS</Badge></>;
+                  })()}
+                  {validationResult?.format !== 'v3'&&<Badge variant="outline" className="font-mono text-[10px] border-amber-500/30 text-amber-400 bg-amber-500/5">
                     {getLifecycleStageCount(parsedBrief)} STAGES
-                  </Badge>
+                  </Badge>}
                   <Badge variant="outline" className={`font-mono text-[10px] ${parsedBrief.visual_lock ? 'border-green-500/30 text-green-400 bg-green-500/5' : 'border-destructive/30 text-destructive bg-destructive/5'}`}>
                     VISUAL LOCK {parsedBrief.visual_lock ? 'PRESENT' : 'MISSING'}
                   </Badge>
@@ -328,6 +342,7 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
                 <div className="p-6 rounded-xl border border-border/20 bg-card">
                   <StandardPreview data={parsedBrief as any} />
                 </div>
+                {validationResult?.format==='v3'&&<EngineeringHandoffInspector handoff={parsedBrief._production_handoff as VisualEngineeringHandoffV3} validation={validationResult}/>}
             </div>
             <div className="relative">
               <Button 

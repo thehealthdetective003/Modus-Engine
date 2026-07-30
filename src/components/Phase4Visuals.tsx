@@ -14,6 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Progress } from '@/components/ui/progress';
 import { createDirectionBatches, missingDirections, PromptBatchError, runSequentialBatches, T2V_BATCH_SIZE, validateBatchNumbers, validateBatchResponse } from '../lib/promptBatch';
 import { compileOmniPrompt, normalizeOmniSections, recompileOmniPrompts } from '../lib/omniPromptCompiler';
+import { buildEngineeringPromptContext, compileEngineeringOmniPrompt, finalizeEngineeringPrompt } from '../lib/engineeringPromptComposer';
+import { validateVisualProductionHandoff } from '../lib/handoffValidation';
 
 interface Props { state: AppState; setState: Dispatch<SetStateAction<AppState>>; }
 const responseSchema = { type: Type.ARRAY, items: { type: Type.OBJECT, required: ['number','action_description','video_prompt','stock_keywords'], properties: {
@@ -35,12 +37,18 @@ export function Phase4Visuals({ state, setState }: Props) {
   const [loading, setLoading] = useState<'demo'|'full'|null>(null);
   const [batchProgress, setBatchProgress] = useState<{ batch:number; total:number; start:number; end:number; completed:number; error?:string } | null>(null);
   const directions = state.sceneDirections;
+  const engineering=state.handoffMode==='ENGINEERING_V3';
+  const eligibleDirections=engineering?directions.filter(direction=>direction.media_route==='GENERATED_T2V'&&direction.generation_permission==='T2V_ALLOWED'):directions;
 
   const requestPrompts = async (ai: GoogleGenAI, selected: typeof directions): Promise<T2VPrompt[]> => {
     const omni=state.t2vPromptProfile==='omni-flash';
-    const response = await ai.models.generateContent({ model: settings.model, contents: JSON.stringify(buildFlowContext(state.topic, selected, state.t2vPromptProfile)), config: {
+    const response = await ai.models.generateContent({ model: settings.model, contents: JSON.stringify(engineering?buildEngineeringPromptContext(state.topic,selected):buildFlowContext(state.topic, selected, state.t2vPromptProfile)), config: {
       responseMimeType:'application/json', responseSchema:omni?omniResponseSchema:responseSchema,
-      systemInstruction:omni
+      systemInstruction:engineering
+        ?omni
+          ?`Return one structured Engineering V3 Omni Flash direction for every supplied scene and copy each scene number exactly. Fill prompt_sections with concise natural-language clauses for cinematography, subject, literal engineering action or relationship, environment, style_lighting, product_state, synchronized physical sound, and exclusions. Use only the focused V3 context. Preserve the exact product and configuration, immutable geometry, exact count, smallest relevant geometry module, operational state, evidence qualification, relationship or concept bridge, truth status, and generic context restrictions. Use one stable configuration, one primary action or relationship, at most one minor supporting action, one physically compatible camera movement, a stable opening and ending, and visible environmental response. GENERAL_PRINCIPLE or GENERIC_PRINCIPLE_ONLY material must remain separate and generic. Never invent internals, promote external observation into proven function, recreate an unverified event or location, morph between systems, include transcript wording, or request readable generated text, dialogue, narration, or music.`
+          :`Return exactly one concise Veo/Flow video_prompt for every supplied Engineering V3 scene and copy each scene number. Use only the focused product, geometry module, beat, engineering system, operational state, relationship or bridge, environment, evidence permissions, references, and global rules. Preserve one exact configuration and count, one primary action or relationship, one camera movement, stable opening and ending, physical environmental response, and qualified evidence language. Never include VO wording, dialogue, narration, music, readable generated text, unsupported internals, exact unverified context, or concept morphing.`
+        :omni
         ? `Return one structured Omni Flash direction for every supplied scene and copy each scene number exactly. Fill prompt_sections with complete natural-language clauses for cinematography, subject, literal visible action, environment, style_lighting, product_state, synchronized ambient sound, and concise scene exclusions. Honor visual_treatment, visual_family, product_visibility, showdown_role, energy_level, camera_platform, and graphic_spec exactly. LIVE_ACTION_T2V is physical documentary footage. For STATIC_GRAPHIC_T2V and MOTION_GRAPHIC_T2V, explain only graphic_spec.visual_claim with its assigned flat-vector composition, motion pattern, nonverbal annotation devices, and maximum animated-element count. Use one clear concept, a static background, stable simplified geometry, limited keyframed motion, and a final-quarter comprehension hold. The graphic must be complete without editor work: never request labels, blank cards, later typography, numbers, maps with readable locations, speech bubbles, fake HUDs, or precise generated data. For an aviation showdown scene, use the supplied physically credible filming platform, one continuous aerodynamically plausible action, stable scale and geometry, environmental response caused by the aircraft, and a settled ending. The role controls the shot's narrative function: establish before release, vary exterior and operator perspective, use grounded resets, make a later peak materially stronger, and resolve through stable return. Never turn a fixed 8/10-second scene into a rapid internal montage. OPERATIONAL_CONTEXT, DYNAMIC_TESTING, and DELIVERY_AND_ROLLOUT must preserve the supplied starting state, one physically plausible maneuver, propulsion or control behavior, environmental response, one achievable camera, and a stable ending configuration across the full clip. Never add weapon discharge, explosions, active combat, impossible aerobatics, unverified flares or stores, invented unit markings, or exact-event/location claims. For NONE visibility omit the product; DETAIL_ONLY stays module-scoped; PARTIAL preserves incompleteness; FULL preserves canonical identity. The application compiles final prose and temporal progression. Use one primary action and camera behavior. Treat the handoff as authoritative; preserve counts, state, geometry, chronology, and continuity. Never invent internals, future components, readable graphic text, labels, logos, maps, or precise generated data. Do not return voiceover, duration, headings, raw JSON text, or abstract narration.`
         : `Create direct text-to-video prompts only. Return exactly one item per supplied scene and copy its number. Do not return or rewrite voiceover. Use the supplied subject, primary action, supporting motion, environment, camera, lighting, material, transition, continuity, visible features and assembly state. Do not invent components or extra actions. ${profileInstruction(state.t2vPromptProfile)}`,
     }});
@@ -48,8 +56,10 @@ export function Phase4Visuals({ state, setState }: Props) {
     const raw = omni?validateBatchNumbers(parsed,selected):validateBatchResponse(parsed, selected);
     const byNumber = new Map(raw.map(item=>[Number(item.number),item]));
     return selected.map(direction => { const item=byNumber.get(direction.number);
-      if(!omni) return { number:direction.number, stage_id:direction.stage_id, state:direction.state, action_description:String(item.action_description||direction.primary_action), video_prompt:finalizeFlowPrompt(String(item.video_prompt),direction,state.topic,state.t2vPromptProfile), voiceover:direction.voiceover, stock_keywords:String(item.stock_keywords||''), continuity_notes:String(item.continuity_notes||direction.continuity_from_previous), quality_flags:Array.isArray(item.quality_flags)?item.quality_flags:[] };
+      const metadata=engineering?{handoff_mode:'ENGINEERING_V3' as const,engineering_system_ids:direction.engineering_system_ids,operational_state_ids:direction.operational_state_ids,evidence_claim_ids:direction.evidence_claim_ids,relationship_id:direction.relationship_id,concept_bridge_id:direction.concept_bridge_id,truth_status:direction.truth_status,generation_permission:direction.generation_permission,media_route:direction.media_route}:{handoff_mode:'MANUFACTURING_V2' as const,stage_id:direction.stage_id,state:direction.state};
+      if(!omni) return {number:direction.number,...metadata,action_description:String(item.action_description||direction.primary_action),video_prompt:engineering?finalizeEngineeringPrompt(String(item.video_prompt),direction,state.topic,state.t2vPromptProfile):finalizeFlowPrompt(String(item.video_prompt),direction,state.topic,state.t2vPromptProfile),voiceover:direction.voiceover,stock_keywords:String(item.stock_keywords||''),continuity_notes:String(item.continuity_notes||direction.continuity_from_previous),quality_flags:Array.isArray(item.quality_flags)?item.quality_flags:[]};
       if(!item?.prompt_sections||typeof item.prompt_sections!=='object') throw new Error(`Scene ${direction.number} has no structured Omni prompt sections.`);
+      if(engineering){const compiled=compileEngineeringOmniPrompt(item.prompt_sections,direction,state.topic);return {number:direction.number,...metadata,action_description:String(item.action_description||direction.primary_action),video_prompt:compiled.prompt,voiceover:direction.voiceover,stock_keywords:String(item.stock_keywords||''),continuity_notes:String(item.continuity_notes||direction.continuity_from_previous),quality_flags:[],omniSections:compiled.sections};}
       const {sections}=normalizeOmniSections(item.prompt_sections,direction,state.topic);
       const video_prompt=compileOmniPrompt(sections,direction);
       return {number:direction.number,stage_id:direction.stage_id,state:direction.state,action_description:String(item.action_description||direction.primary_action),video_prompt,voiceover:direction.voiceover,stock_keywords:String(item.stock_keywords||''),continuity_notes:String(item.continuity_notes||direction.continuity_from_previous),quality_flags:[],omniSections:sections};
@@ -58,6 +68,7 @@ export function Phase4Visuals({ state, setState }: Props) {
 
   const generate = async (demo: boolean, resume = false) => {
     if (!directions.length) return toast.error('Approve valid Phase 2 directions first.');
+    if(!eligibleDirections.length)return toast.error('This Engineering V3 plan has no scenes eligible for GENERATED_T2V. Use the media-routing report for external/editor routes.');
     const apiKey = settings.apiKey || process.env.GEMINI_API_KEY;
     if (!apiKey) return toast.error('Add a Gemini API key in Settings.');
     setLoading(demo ? 'demo' : 'full');
@@ -65,16 +76,16 @@ export function Phase4Visuals({ state, setState }: Props) {
     try {
       const ai = new GoogleGenAI({ apiKey });
       if (demo) {
-        const selected = directions.slice(0, Math.min(3,directions.length));
+        const selected = eligibleDirections.slice(0, Math.min(3,eligibleDirections.length));
         const prompts = await requestPrompts(ai, selected);
         setState(p=>({...p,demoState:'generated',demoScenes:prompts,demoSceneNumbers:prompts.map(x=>x.number)}));
         toast.success('Demo T2V prompts generated.');
       } else {
         const existing = resume ? state.visualPrompts : [];
         if (!resume) setState(previous=>({...previous,visualPrompts:[],demoScenes:[],demoSceneNumbers:[],demoState:'idle'}));
-        const remaining = missingDirections(directions, existing);
+        const remaining = missingDirections(eligibleDirections, existing);
         const batches = createDirectionBatches(remaining);
-        const totalProjectBatches = Math.ceil(directions.length / T2V_BATCH_SIZE);
+        const totalProjectBatches = Math.ceil(eligibleDirections.length / T2V_BATCH_SIZE);
         let accumulated:T2VPrompt[];
         try {
           accumulated = await runSequentialBatches(batches,existing,batch=>requestPrompts(ai,batch),(batch,items)=>{
@@ -93,20 +104,22 @@ export function Phase4Visuals({ state, setState }: Props) {
           }
           throw error;
         }
-        toast.success(`All ${accumulated.length} T2V prompts generated in ${totalProjectBatches} batch${totalProjectBatches===1?'':'es'}.`);
+        toast.success(`All ${accumulated.length} eligible T2V prompts generated in ${totalProjectBatches} batch${totalProjectBatches===1?'':'es'}.`);
       }
     } catch(error) { toast.error(error instanceof Error?error.message:'T2V generation failed.'); }
     finally { setLoading(null); }
   };
-  const completedNumbers = new Set(state.visualPrompts.map(prompt=>prompt.number).filter(number=>directions.some(direction=>direction.number===number)));
-  const isComplete = directions.length > 0 && completedNumbers.size === directions.length;
+  const completedNumbers = new Set(state.visualPrompts.map(prompt=>prompt.number).filter(number=>eligibleDirections.some(direction=>direction.number===number)));
+  const isComplete = eligibleDirections.length > 0 && completedNumbers.size === eligibleDirections.length;
   const isPartial = completedNumbers.size > 0 && !isComplete;
   const canResume = !isComplete && (isPartial || Boolean(batchProgress?.error));
   const shown = state.visualPrompts.length ? state.visualPrompts : state.demoScenes;
   const update = (number:number,field:'video_prompt'|'action_description'|'stock_keywords',value:string) => setState(p=>({ ...p, visualPrompts:p.visualPrompts.map(x=>x.number===number?{...x,[field]:value}:x), demoScenes:p.demoScenes.map(x=>x.number===number?{...x,[field]:value}:x) }));
   const profileLabel = state.t2vPromptProfile === 'omni-flash' ? 'Gemini Omni Flash' : 'Veo / Google Flow';
   const allText = [...shown].sort((a,b)=>a.number-b.number).map(prompt=>`${prompt.number}: ${prompt.video_prompt}`).join('\n\n');
-  const exportCsv = () => download('t2v-prompts.csv', ['profile,number,start,end,duration,chapter,beat,visual_family,story_function,visual_treatment,product_visibility,showdown_role,energy_level,camera_platform,graphic_subtype,graphic_claim,graphic_composition,graphic_motion,stage,state,action,voiceover,t2v_prompt,keywords,continuity,quality_flags',...state.visualPrompts.map(p=>{const d=directions[p.number-1];return [state.t2vPromptProfile,p.number,d?.start,d?.end,d?.duration,d?.chapter_id,d?.beat_id,d?.visual_family,d?.story_function,d?.visual_treatment,d?.product_visibility,d?.showdown_role,d?.energy_level,d?.camera_platform,d?.graphic_spec?.graphic_subtype,d?.graphic_spec?.visual_claim,d?.graphic_spec?.composition,d?.graphic_spec?.motion_pattern,p.stage_id,p.state,p.action_description,p.voiceover,p.video_prompt,p.stock_keywords,p.continuity_notes,(p.quality_flags||[]).join('|')].map(csvCell).join(',')})].join('\n'),'text/csv');
+  const exportCsv = () => engineering
+    ?download('engineering-v3-t2v-prompts.csv',['mode,schema_version,profile,number,start,end,duration,chapter,beat,visual_family,story_function,visual_treatment,product_visibility,engineering_system_ids,operational_state_ids,evidence_claim_ids,relationship_id,concept_bridge_id,truth_status,generation_permission,media_route,action,voiceover,t2v_prompt,keywords,continuity',...state.visualPrompts.map(p=>{const d=directions[p.number-1];return ['ENGINEERING_V3',state.schemaVersion,state.t2vPromptProfile,p.number,d?.start,d?.end,d?.duration,d?.chapter_id,d?.beat_id,d?.visual_family,d?.story_function,d?.visual_treatment,d?.product_visibility,(d?.engineering_system_ids||[]).join('|'),(d?.operational_state_ids||[]).join('|'),(d?.evidence_claim_ids||[]).join('|'),d?.relationship_id,d?.concept_bridge_id,d?.truth_status,d?.generation_permission,d?.media_route,p.action_description,p.voiceover,p.video_prompt,p.stock_keywords,p.continuity_notes].map(csvCell).join(',')})].join('\n'),'text/csv')
+    :download('t2v-prompts.csv', ['profile,number,start,end,duration,chapter,beat,visual_family,story_function,visual_treatment,product_visibility,showdown_role,energy_level,camera_platform,graphic_subtype,graphic_claim,graphic_composition,graphic_motion,stage,state,action,voiceover,t2v_prompt,keywords,continuity,quality_flags',...state.visualPrompts.map(p=>{const d=directions[p.number-1];return [state.t2vPromptProfile,p.number,d?.start,d?.end,d?.duration,d?.chapter_id,d?.beat_id,d?.visual_family,d?.story_function,d?.visual_treatment,d?.product_visibility,d?.showdown_role,d?.energy_level,d?.camera_platform,d?.graphic_spec?.graphic_subtype,d?.graphic_spec?.visual_claim,d?.graphic_spec?.composition,d?.graphic_spec?.motion_pattern,p.stage_id,p.state,p.action_description,p.voiceover,p.video_prompt,p.stock_keywords,p.continuity_notes,(p.quality_flags||[]).join('|')].map(csvCell).join(',')})].join('\n'),'text/csv');
   const exportVo = () => download('timestamped-vo.txt', directions.map(d=>`[${formatTimestamp(d.start)} - ${formatTimestamp(d.end)}] Scene ${d.number}${d.silent?' [SILENT]':''}\n${d.voiceover}`).join('\n\n'),'text/plain');
   const recompileAll = () => {
     if(state.t2vPromptProfile!=='omni-flash')return;
@@ -114,15 +127,15 @@ export function Phase4Visuals({ state, setState }: Props) {
     if(!promptCount)return;
     setState(previous=>({
       ...previous,
-      visualPrompts:recompileOmniPrompts(previous.visualPrompts,directions,previous.topic),
-      demoScenes:recompileOmniPrompts(previous.demoScenes,directions,previous.topic),
+      visualPrompts:engineering?previous.visualPrompts.map(prompt=>{const direction=directions.find(item=>item.number===prompt.number);if(!direction)return prompt;const compiled=compileEngineeringOmniPrompt(prompt.omniSections||{},direction,previous.topic);return {...prompt,video_prompt:compiled.prompt,omniSections:compiled.sections};}):recompileOmniPrompts(previous.visualPrompts,directions,previous.topic),
+      demoScenes:engineering?previous.demoScenes.map(prompt=>{const direction=directions.find(item=>item.number===prompt.number);if(!direction)return prompt;const compiled=compileEngineeringOmniPrompt(prompt.omniSections||{},direction,previous.topic);return {...prompt,video_prompt:compiled.prompt,omniSections:compiled.sections};}):recompileOmniPrompts(previous.demoScenes,directions,previous.topic),
     }));
     toast.success(`Recompiled ${promptCount} Omni prompt${promptCount===1?'':'s'} locally. No API request was made.`);
   };
 
   return <div className="space-y-6">
     <Button variant="link" className="p-0 text-muted-foreground" onClick={()=>setState(s=>({...s,phase:2}))}><ArrowLeft className="h-3 w-3 mr-1"/>Review Directions</Button>
-    <div><h2 className="text-xl font-bold tracking-wider">PHASE 3 — T2V PROMPTS</h2><p className="text-xs text-muted-foreground">Direct timestamped video prompts with the exact imported VO attached locally.</p></div>
+    <div><h2 className="text-xl font-bold tracking-wider">PHASE 3 — T2V PROMPTS</h2><p className="text-xs text-muted-foreground">{engineering?`${eligibleDirections.length} of ${directions.length} Engineering V3 scenes are eligible for generated T2V; other scenes retain their assigned media routes.`:'Direct timestamped video prompts with the exact imported VO attached locally.'}</p></div>
     <div className="rounded-lg border border-border/50 bg-muted/20 p-4 space-y-2">
       <label className="text-[10px] font-bold tracking-widest text-muted-foreground">GOOGLE FLOW TARGET PROFILE</label>
       <Select value={state.t2vPromptProfile} onValueChange={(value) => setState(previous => ({ ...previous, t2vPromptProfile:value as T2VPromptProfile, visualPrompts:[], demoScenes:[], demoSceneNumbers:[], demoState:'idle' }))}>
@@ -132,17 +145,17 @@ export function Phase4Visuals({ state, setState }: Props) {
     </div>
     {!state.visualPrompts.length && !batchProgress?.error && <div className="grid md:grid-cols-2 gap-3"><Button variant="outline" className="h-12" disabled={!!loading} onClick={()=>generate(true)}>{loading==='demo'?<Loader2 className="animate-spin mr-2"/>:<Play className="h-4 w-4 mr-2"/>}GENERATE 3-SCENE DEMO</Button><Button className="h-12 font-bold" disabled={!!loading} onClick={()=>generate(false,false)}>{loading==='full'&&<Loader2 className="animate-spin mr-2"/>}GENERATE ALL · BATCHES OF 30</Button></div>}
     {state.demoScenes.length>0&&!state.visualPrompts.length&&!batchProgress?.error&&<Button className="w-full" disabled={!!loading} onClick={()=>generate(false,false)}>DEMO APPROVED — GENERATE FULL SET IN BATCHES</Button>}
-    {canResume && !loading && <div className="grid md:grid-cols-2 gap-3"><Button className="h-12 font-bold" onClick={()=>generate(false,true)}><RefreshCw className="h-4 w-4 mr-2"/>RESUME FROM SCENE {missingDirections(directions,state.visualPrompts)[0]?.number}</Button><Button variant="outline" className="h-12" onClick={()=>generate(false,false)}>RESTART FULL GENERATION</Button></div>}
+    {canResume && !loading && <div className="grid md:grid-cols-2 gap-3"><Button className="h-12 font-bold" onClick={()=>generate(false,true)}><RefreshCw className="h-4 w-4 mr-2"/>RESUME FROM SCENE {missingDirections(eligibleDirections,state.visualPrompts)[0]?.number}</Button><Button variant="outline" className="h-12" onClick={()=>generate(false,false)}>RESTART FULL GENERATION</Button></div>}
     {batchProgress && <div className={`rounded-lg border p-4 space-y-3 ${batchProgress.error?'border-red-500/40 bg-red-500/5':'border-primary/30 bg-primary/5'}`}>
-      <div className="flex flex-wrap justify-between gap-2 text-xs"><span className="font-bold">{batchProgress.error?'GENERATION PAUSED':isComplete?'GENERATION COMPLETE':`BATCH ${batchProgress.batch} OF ${batchProgress.total}`}</span><span>{batchProgress.completed} / {directions.length} scenes completed</span></div>
-      <Progress value={directions.length ? (batchProgress.completed/directions.length)*100 : 0}/>
+      <div className="flex flex-wrap justify-between gap-2 text-xs"><span className="font-bold">{batchProgress.error?'GENERATION PAUSED':isComplete?'GENERATION COMPLETE':`BATCH ${batchProgress.batch} OF ${batchProgress.total}`}</span><span>{batchProgress.completed} / {eligibleDirections.length} eligible scenes completed</span></div>
+      <Progress value={eligibleDirections.length ? (batchProgress.completed/eligibleDirections.length)*100 : 0}/>
       <div className="text-[10px] text-muted-foreground">Scenes {batchProgress.start}–{batchProgress.end} · fixed {T2V_BATCH_SIZE}-scene sequential batches</div>
       {batchProgress.error&&<div className="flex gap-2 text-xs text-red-400"><AlertCircle className="h-4 w-4 shrink-0"/>{batchProgress.error}</div>}
     </div>}
-    {isComplete && !batchProgress && <Badge className="bg-green-600/20 text-green-500 border-green-500/30">GENERATION COMPLETE · {directions.length} SCENES</Badge>}
-    {shown.length>0 && <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={async()=>toast[await copyToClipboard(allText)?'success':'error'](`Copied ${shown.length} prompt${shown.length===1?'':'s'} in scene order.`)}><Copy className="h-4 w-4 mr-2"/>COPY ALL PROMPTS</Button>{state.t2vPromptProfile==='omni-flash'&&<Button variant="outline" onClick={recompileAll}><RefreshCw className="h-4 w-4 mr-2"/>RECOMPILE ALL PROMPTS</Button>}{isComplete&&<><Button variant="outline" onClick={exportCsv}><Download className="h-4 w-4 mr-2"/>CSV</Button><Button variant="outline" onClick={exportVo}><Download className="h-4 w-4 mr-2"/>TIMESTAMPED VO</Button></>}</div>}
+    {isComplete && !batchProgress && <Badge className="bg-green-600/20 text-green-500 border-green-500/30">GENERATION COMPLETE · {eligibleDirections.length} ELIGIBLE SCENES</Badge>}
+    <div className="flex flex-wrap gap-2">{shown.length>0&&<><Button variant="outline" onClick={async()=>toast[await copyToClipboard(allText)?'success':'error'](`Copied ${shown.length} prompt${shown.length===1?'':'s'} in scene order.`)}><Copy className="h-4 w-4 mr-2"/>COPY ALL PROMPTS</Button>{state.t2vPromptProfile==='omni-flash'&&<Button variant="outline" onClick={recompileAll}><RefreshCw className="h-4 w-4 mr-2"/>RECOMPILE ALL PROMPTS</Button>}{isComplete&&<><Button variant="outline" onClick={exportCsv}><Download className="h-4 w-4 mr-2"/>CSV</Button><Button variant="outline" onClick={exportVo}><Download className="h-4 w-4 mr-2"/>TIMESTAMPED VO</Button></>}</>}{engineering&&<><Button variant="outline" onClick={()=>download('engineering-v3-scene-plan.json',JSON.stringify({mode:state.handoffMode,schemaVersion:state.schemaVersion,scenes:directions},null,2),'application/json')}><Download className="h-4 w-4 mr-2"/>SCENE PLAN</Button><Button variant="outline" onClick={()=>download('engineering-v3-media-routing.json',JSON.stringify({mode:state.handoffMode,schemaVersion:state.schemaVersion,routes:directions.map(d=>({number:d.number,beat_id:d.beat_id,media_route:d.media_route,generation_permission:d.generation_permission,reason:d.route_reason}))},null,2),'application/json')}><Download className="h-4 w-4 mr-2"/>MEDIA ROUTING</Button><Button variant="outline" onClick={()=>download('engineering-v3-validation.json',JSON.stringify(validateVisualProductionHandoff(state.rawHandoff),null,2),'application/json')}><Download className="h-4 w-4 mr-2"/>VALIDATION</Button></>}</div>
     <div className="space-y-4">{shown.map(prompt=>{const d=directions[prompt.number-1];return <div key={prompt.number} className="border rounded-lg p-4 space-y-3">
-      <div className="flex flex-wrap gap-2"><Badge>SCENE {prompt.number}</Badge><Badge variant="outline">{profileLabel}</Badge><Badge variant="outline">{formatTimestamp(d?.start||0)}–{formatTimestamp(d?.end||0)}</Badge><Badge variant="outline">{prompt.stage_id}</Badge><Badge variant="secondary">STATE {prompt.state}</Badge></div>
+      <div className="flex flex-wrap gap-2"><Badge>SCENE {prompt.number}</Badge><Badge variant="outline">{profileLabel}</Badge><Badge variant="outline">{formatTimestamp(d?.start||0)}–{formatTimestamp(d?.end||0)}</Badge>{engineering?<><Badge variant="outline">{(d?.engineering_system_ids||[]).join(', ')}</Badge>{d?.operational_state_ids?.map(id=><Badge key={id} variant="secondary">{id}</Badge>)}<Badge variant="outline">{d?.media_route}</Badge><Badge variant="outline">{d?.truth_status}</Badge></>:<><Badge variant="outline">{prompt.stage_id}</Badge><Badge variant="secondary">STATE {prompt.state}</Badge></>}</div>
       <label className="text-[10px] text-muted-foreground">ACTION</label><Textarea value={prompt.action_description} onChange={e=>update(prompt.number,'action_description',e.target.value)} className="min-h-[65px]"/>
       <label className="text-[10px] text-primary font-bold">T2V PROMPT</label><Textarea value={prompt.video_prompt} onChange={e=>update(prompt.number,'video_prompt',e.target.value)} className="min-h-[180px]"/>
       <div className="bg-muted/40 p-3 rounded text-xs"><div className="text-[10px] text-muted-foreground mb-1">EXACT IMPORTED VO {d?.silent?'· SILENT WINDOW':''}</div>{prompt.voiceover||'[SILENT]'}</div>

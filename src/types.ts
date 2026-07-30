@@ -1,5 +1,14 @@
-import type { AnyVisualProductionHandoff, ProductVisibility, StoryFunction, VisualFamily } from './types/visualProductionV2';
-export type { ProductVisibility, StoryFunction, VisualFamily } from './types/visualProductionV2';
+import type { AnyVisualProductionHandoff, ProductVisibility as V2ProductVisibility, StoryFunction as V2StoryFunction, VisualFamily as V2VisualFamily } from './types/visualProductionV2';
+import type { V3ContextTruthStatus, V3GenerationPermission, V3MediaRoute, V3ProductVisibility, V3StoryFunction, V3VisualFamily, VisualEngineeringHandoffV3 } from './types/visualEngineeringV3';
+
+export type HandoffMode='MANUFACTURING_V2'|'ENGINEERING_V3';
+export type HandoffEnvelope=
+  | {mode:'MANUFACTURING_V2';schemaVersion:'2.0.0';handoff:Extract<AnyVisualProductionHandoff,{schema:{version:'2.0.0'}}>}
+  | {mode:'ENGINEERING_V3';schemaVersion:'3.0.0';handoff:VisualEngineeringHandoffV3};
+export type VisualFamily=V2VisualFamily|V3VisualFamily;
+export type StoryFunction=V2StoryFunction|V3StoryFunction;
+export type ProductVisibility=V2ProductVisibility|V3ProductVisibility;
+export type MediaRoute=V3MediaRoute;
 
 export type PhaseType = 1 | 2 | 3;
 export type ProjectFormatId = 'standard-lifecycle';
@@ -87,7 +96,7 @@ export interface TopicBrief {
   };
   lifecycle_stage_count?: number | string;
   quality_control?: any;
-  _production_handoff?: AnyVisualProductionHandoff;
+  _production_handoff?: AnyVisualProductionHandoff|VisualEngineeringHandoffV3;
   environments: Array<{
     environment_id?: string;
     stage_ref?: string;
@@ -227,15 +236,26 @@ export interface GraphicSceneSpec {
 }
 export interface PlannedScene {
   number: number;
+  handoff_mode?: HandoffMode;
   chapter_id: string;
   beat_id: string;
   visual_family: VisualFamily;
   story_function: StoryFunction;
   visual_treatment: VisualTreatment;
   product_visibility: ProductVisibility;
-  stage_id: string;
+  stage_id?: string;
   environment_ref: string;
-  state: 'A' | 'B' | 'C';
+  state?: 'A' | 'B' | 'C';
+  engineering_system_ids?: string[];
+  operational_state_ids?: string[];
+  evidence_claim_ids?: string[];
+  geometry_module_ids?: string[];
+  relationship_id?: string | null;
+  concept_bridge_id?: string | null;
+  truth_status?: V3ContextTruthStatus;
+  generation_permission?: V3GenerationPermission;
+  media_route?: V3MediaRoute;
+  route_reason?: string;
   showdown_role: ShowdownRole | null;
   energy_level: CinematicEnergy;
   camera_platform: CameraPlatform | null;
@@ -250,6 +270,7 @@ export interface TemporalAction {
 }
 export interface SceneDirection {
   number: number;
+  handoff_mode?: HandoffMode;
   start: number;
   end: number;
   duration: number;
@@ -265,8 +286,18 @@ export interface SceneDirection {
   energy_level?: CinematicEnergy;
   camera_platform?: CameraPlatform | null;
   graphic_spec?: GraphicSceneSpec | null;
-  stage_id: string;
-  state: 'A' | 'B' | 'C';
+  stage_id?: string;
+  state?: 'A' | 'B' | 'C';
+  engineering_system_ids?: string[];
+  operational_state_ids?: string[];
+  evidence_claim_ids?: string[];
+  geometry_module_ids?: string[];
+  relationship_id?: string | null;
+  concept_bridge_id?: string | null;
+  truth_status?: V3ContextTruthStatus;
+  generation_permission?: V3GenerationPermission;
+  media_route?: V3MediaRoute;
+  route_reason?: string;
   subject: string;
   product_visual_state: string;
   primary_action: string;
@@ -283,8 +314,17 @@ export interface SceneDirection {
 }
 export interface T2VPrompt {
   number: number;
+  handoff_mode?: HandoffMode;
   stage_id?: string;
   state?: 'A' | 'B' | 'C';
+  engineering_system_ids?: string[];
+  operational_state_ids?: string[];
+  evidence_claim_ids?: string[];
+  relationship_id?: string|null;
+  concept_bridge_id?: string|null;
+  truth_status?: V3ContextTruthStatus;
+  generation_permission?: V3GenerationPermission;
+  media_route?: V3MediaRoute;
   continuity_notes?: string;
   quality_flags?: string[];
   action_description: string;
@@ -295,6 +335,10 @@ export interface T2VPrompt {
 }
 export interface AppState {
   projectSchemaVersion: number;
+  scenePlanFormatVersion: number;
+  handoffMode: HandoffMode|null;
+  schemaVersion: string|null;
+  rawHandoff: AnyVisualProductionHandoff|VisualEngineeringHandoffV3|null;
   id?: string;
   projectName: string;
   projectFormat: ProjectFormatId;
@@ -320,6 +364,8 @@ export interface SavedProject {
   demoOnly: boolean;
   savedAt: string;
   createdAt: string;
+  handoffMode?: HandoffMode|null;
+  schemaVersion?: string|null;
 }
 export interface FullProjectData extends AppState {
   id: string;

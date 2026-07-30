@@ -1,5 +1,6 @@
 import { TopicBrief } from '../types';
-import { DEFAULT_V2_PRODUCTION_TEMPLATE, validateVisualProductionHandoff } from './handoffValidation';
+import type { VisualEngineeringHandoffV3 } from '../types/visualEngineeringV3';
+import { DEFAULT_V2_PRODUCTION_TEMPLATE, detectHandoffFormat, validateVisualProductionHandoff } from './handoffValidation';
 
 const measurement = () => ({ value: null, unit: '', confidence: 'UNKNOWN' });
 
@@ -67,6 +68,17 @@ export function validateProductionTemplate(data: any): string[] {
 }
 
 export function productionTemplatePrompt(template: Record<string, any>): string {
+  if(detectHandoffFormat(template)==='v3')return `You are an evidence-led engineering documentary researcher. Fill this Modus Assembly Visual Engineering Handoff V3 JSON for [PRODUCT].
+RULES:
+- Preserve every key and data type; do not add or remove fields.
+- Keep engineering systems, operational states, relationships, concept bridges, and evidence claims distinct.
+- Provide at least four meaningful engineering systems with stable unique IDs.
+- Never promote a general principle or external observation into a confirmed product-specific internal implementation.
+- Respect wording_permission, visualization_permission, generation_permission, media routes, and context truth status.
+- Route readable maps, timelines, dimensions, labels, formulas, interfaces, and precise data to EDITOR_NATIVE_GRAPHIC.
+- Return only schema-valid JSON version 3.0.0.
+
+${JSON.stringify(template,null,2)}`;
   return `You are a manufacturing research and visual-continuity specialist. Fill this Modus Assembly Visual Production Handoff JSON for [PRODUCT].\nRULES:\n- Preserve every key and its data type; do not add or remove fields.\n- Fill arrays with as many accurate entries as the product requires.\n- Keep confirmed evidence separate from analyst inference and uncertainty.\n- Give every environment, geometry module, reference asset, action, and stage a stable unique ID.\n- Keep stages chronological and use product_state_code A (raw), B (partial), or C (finished).\n- Describe only camera-visible geometry, materials, factory actions, continuity, and constraints.\n- Return only valid JSON.\n\n${JSON.stringify(template, null, 2)}`;
 }
 
@@ -130,4 +142,49 @@ export function normalizeProductionHandoff(input: any): TopicBrief {
 
 export function isProductionHandoff(data: any): boolean {
   return !!data?.schema?.name && Array.isArray(data?.production_stages) && !!data?.product;
+}
+
+export function isEngineeringHandoff(data:any):data is VisualEngineeringHandoffV3 {
+  return data?.schema?.name==='Modus Assembly Visual Engineering Handoff'
+    && data?.schema?.version==='3.0.0'
+    && Array.isArray(data?.engineering_systems)
+    && Array.isArray(data?.operational_states);
+}
+
+export function normalizeEngineeringHandoff(input:VisualEngineeringHandoffV3):TopicBrief {
+  const product=input.product,dims=input.dimensions_and_proportions;
+  const productName=[product.official_name,product.exact_variant_or_configuration].filter(Boolean).join(' ')||'Untitled engineering subject';
+  const dimensionText=describe(dims);
+  const moduleText=input.geometry_modules.map(module=>[module.module_name||module.module_id,...strings(module.required_visible_features)].filter(Boolean).join(': ')).filter(Boolean);
+  const visualLock=[product.overall_visual_description,...product.immutable_identity_features,dimensionText,...moduleText].filter(Boolean).join(' | ');
+  const exclusions=[...product.visually_similar_products_to_avoid,...product.global_negative_constraints,...input.geometry_modules.flatMap(module=>module.likely_wrong_substitutions),...input.geometry_modules.flatMap(module=>module.forbidden_geometry_changes)];
+  const environments=input.environments.map(environment=>({
+    environment_id:environment.environment_id,
+    name:environment.environment_name,
+    environment_type:environment.setting_scope||environment.environment_type,
+    visual_details:describe(environment,['environment_id','environment_name','forbidden_elements']),
+    confirmed_visuals:['EXACT_EVENT_VERIFIED','EXACT_LOCATION_VERIFIED','ENVIRONMENT_TYPE_CORROBORATED'].includes(environment.context_truth_status)?describe(environment,['environment_id','environment_name','forbidden_elements']):'',
+    inferred_visuals:environment.context_truth_status==='CONTEXTUAL_NON_IDENTIFYING'?describe(environment,['environment_id','environment_name','forbidden_elements']):'',
+    do_not_show:environment.forbidden_elements,
+  }));
+  return {
+    schema_version:'modus_visual_engineering_handoff_3.0.0',
+    topic:{title:`The Engineering of ${productName}`,product:productName,category:product.product_class,manufacturer:product.developer_or_design_authority_if_confirmed},
+    source_integrity:{source_quality_summary:input.evidence_boundaries.overall_evidence_ceiling,evidence_confidence_summary:input.evidence_boundaries.confirmed_product_specific_scope.join('; '),allowed_claim_confidence:['CONFIRMED','CORROBORATED','CREATOR_PROVIDED'],disallowed_claim_confidence:['UNKNOWN'],research_ledger_note:'Engineering V3 evidence boundaries are authoritative.'},
+    global_visual_constants:'Evidence-led engineering documentary, stable exact product identity, physically plausible forces, flows, signals, controls, environmental response, and observable evidence.',
+    product_identity_lock:{core_geometry:visualLock,surface_finish:product.overall_visual_description,markings:'Use exact markings only with reference lock.',scale_reference:dims.human_scale_reference,distinctive_features:product.immutable_identity_features,must_remain_consistent_across_all_scenes:true},
+    visual_lock:visualLock,
+    visual_exclusions:exclusions.join(', '),
+    negative_prompt_global:[...new Set(exclusions)],
+    environments,
+    lifecycle_stages:[],
+    lifecycle_stage_count:0,
+    scene_continuity_rules:{lifecycle_progression:'Follow the approved engineering chapter architecture; concept bridges never imply physical transformation.',state_consistency:'Preserve one stable operational configuration per clip.',environment_logic:'Use only the selected V3 environment and its truth status.',markings_consistency:'Preserve exact markings only with reference support.',scale_consistency:dims.human_scale_reference||'Keep product scale and proportions stable.',no_stage_skipping:true},
+    quality_control:{source_schema:input.schema,evidence_boundaries:input.evidence_boundaries,engineering_systems:input.engineering_systems,operational_states:input.operational_states,system_relationships:input.system_relationships,concept_bridges:input.concept_bridges,global_prompt_rules:input.global_prompt_rules},
+    _production_handoff:input,
+  };
+}
+
+export function normalizeVisualHandoff(input:any):TopicBrief {
+  return isEngineeringHandoff(input)?normalizeEngineeringHandoff(input):normalizeProductionHandoff(input);
 }
