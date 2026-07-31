@@ -1,5 +1,6 @@
 import type { OmniPromptSections, SceneDirection, T2VPromptProfile, TopicBrief } from '../types';
 import type { V3EvidenceClaim, V3VisualBeat, VisualEngineeringHandoffV3 } from '../types/visualEngineeringV3';
+import { prepareEngineeringSceneForT2V } from './engineeringT2V';
 
 const clean=(value:unknown)=>String(value??'').replace(/\[object Object\]/gi,'').replace(/\s+/g,' ').trim();
 const sentence=(value:unknown)=>{
@@ -33,7 +34,8 @@ export function buildEngineeringPromptContext(topic:TopicBrief|null,directions:S
     dimensions_and_proportions:handoff.dimensions_and_proportions,
     global_prompt_rules:handoff.global_prompt_rules,
     evidence_policy:handoff.visual_story_plan.evidence_visualization_policy,
-    scenes:directions.map(direction=>{
+    scenes:directions.map(sourceDirection=>{
+      const direction=prepareEngineeringSceneForT2V(sourceDirection);
       const beat=beatFor(handoff,direction);
       const systemIds=new Set(direction.engineering_system_ids||[]),stateIds=new Set(direction.operational_state_ids||[]);
       const moduleIds=new Set(direction.geometry_module_ids||[]);
@@ -48,15 +50,16 @@ export function buildEngineeringPromptContext(topic:TopicBrief|null,directions:S
         transition_to_next:direction.transition_to_next,required_visible_features:direction.required_visible_features,
         forbidden_elements:direction.forbidden_elements,temporal_action:direction.temporal_action,
         media_route:direction.media_route,generation_permission:direction.generation_permission,truth_status:direction.truth_status,
-        selected_beat:beat,
+        source_media_route:direction.source_media_route,source_generation_permission:direction.source_generation_permission,t2v_substitution:direction.t2v_substitution,
+        selected_beat:direction.t2v_substitution&&beat?{...beat,narrative_purpose:`Qualitative T2V-safe substitute for ${beat.story_function.toLowerCase().replaceAll('_',' ')}; do not reproduce exact source data or claims.`,evidence_claim_ids:[],reference_asset_ids:[],generation_permission:'T2V_ALLOWED',preferred_media_routes:['GENERATED_T2V'],exact_event_or_location_claim_allowed:false,product_visibility:direction.product_visibility}:beat,
         engineering_systems:handoff.engineering_systems.filter(item=>systemIds.has(item.system_id)),
         operational_states:handoff.operational_states.filter(item=>stateIds.has(item.state_id)),
         geometry_modules:handoff.geometry_modules.filter(item=>moduleIds.has(item.module_id)),
         relationship:handoff.system_relationships.find(item=>item.relationship_id===direction.relationship_id)||null,
         concept_bridge:handoff.concept_bridges.find(item=>item.bridge_id===direction.concept_bridge_id)||null,
-        evidence_claims:claimsFor(handoff,direction),
+        evidence_claims:direction.t2v_substitution?[]:claimsFor(handoff,direction),
         environment,
-        reference_assets:handoff.reference_assets.filter(item=>referenceIds.has(item.asset_id)),
+        reference_assets:direction.t2v_substitution?[]:handoff.reference_assets.filter(item=>referenceIds.has(item.asset_id)),
       };
     }),
   };
@@ -77,10 +80,10 @@ function qualificationClause(claims:V3EvidenceClaim[]){
   return generic?'Present the engineering relationship as a separate generic principle and do not imply an exact product-specific internal implementation.':inferred?'Present product-specific interpretation only as a plausible visual inference, not a confirmed internal fact.':'';
 }
 
-export function compileEngineeringOmniPrompt(raw:Partial<OmniPromptSections>,direction:SceneDirection,topic:TopicBrief|null):{sections:OmniPromptSections;prompt:string}{
+export function compileEngineeringOmniPrompt(raw:Partial<OmniPromptSections>,sourceDirection:SceneDirection,topic:TopicBrief|null):{sections:OmniPromptSections;prompt:string}{
   const handoff=handoffFor(topic);
   if(!handoff||handoff.schema?.version!=='3.0.0')throw new Error('Engineering prompt compilation requires a validated V3 handoff.');
-  if(direction.media_route!=='GENERATED_T2V'||direction.generation_permission!=='T2V_ALLOWED')throw new Error(`Scene ${direction.number} is routed to ${direction.media_route||'NO_VALID_ROUTE'} and cannot produce a generated T2V prompt.`);
+  const direction=prepareEngineeringSceneForT2V(sourceDirection);
   const beat=beatFor(handoff,direction),claims=claimsFor(handoff,direction),identity=productIdentity(handoff,direction);
   const state=handoff.operational_states.find(item=>(direction.operational_state_ids||[]).includes(item.state_id));
   const relationship=handoff.system_relationships.find(item=>item.relationship_id===direction.relationship_id);
@@ -94,21 +97,35 @@ export function compileEngineeringOmniPrompt(raw:Partial<OmniPromptSections>,dir
     ?`${state.opening_state}. ${state.primary_action}. Midway, ${state.midpoint_event}; ${state.propulsion_or_control_behavior}. ${state.physical_environmental_response}. End with ${state.stable_ending_state}`
     :temporal?`${temporal.opening_state}. ${temporal.primary_motion}; ${temporal.physical_interaction}. Midway, ${temporal.mid_shot_progression}. End with ${temporal.ending_state}`
     :direction.primary_action;
-  const evidenceQualification=qualificationClause(claims);
+  const evidenceQualification=direction.t2v_substitution==='EDITOR_DATA_TO_TEXT_FREE_GRAPHIC'
+    ?'Present only a qualitative relationship using unlabeled shapes and motion; do not show precise values, readable scales, or source graphics.'
+    :direction.t2v_substitution==='REFERENCE_TO_CONTEXTUAL_T2V'
+      ?'Treat this as a contextual reconstruction, not an exact source image, event, location, marking, or verified proprietary detail.'
+      :direction.t2v_substitution==='BLOCKED_TO_NEUTRAL_CONTEXT'
+        ?'Do not visualize the blocked evidence claim or any product-specific geometry.'
+        :qualificationClause(claims);
   const positiveGeometry=identity.anchors.length?`Keep ${list(identity.anchors)} clearly visible`:direction.product_visual_state;
   const relationshipText=relationship?`${relationship.relationship_summary}. Show ${relationship.physical_or_information_path} through observable evidence only: ${relationship.observable_evidence.join(', ')}`:bridge?`${bridge.bridge_logic}. Preserve ${bridge.shared_visual_anchor} as a conceptual continuity anchor without morphing one system into another`:'';
+  const graphic=direction.visual_treatment==='STATIC_GRAPHIC_T2V'||direction.visual_treatment==='MOTION_GRAPHIC_T2V';
   const sound=direction.visual_treatment==='LIVE_ACTION_T2V'
     ?'Generate synchronized physical and environmental sound appropriate to the visible action'
     :'Use restrained synchronized abstract engineering sound with no speech or musical score';
-  const exclusions=unique([direction.forbidden_elements,beat?.must_not_show,beat?.negative_constraints,identity.smallestModule?.forbidden_geometry_changes,identity.smallestModule?.likely_wrong_substitutions,handoff.product.visually_similar_products_to_avoid,handoff.product.global_negative_constraints,'dialogue','narration','music','readable generated text','invented internal systems','geometry morphing']).slice(0,12);
+  const exclusions=unique([direction.forbidden_elements,beat?.must_not_show,beat?.negative_constraints,identity.smallestModule?.forbidden_geometry_changes,identity.smallestModule?.likely_wrong_substitutions,handoff.product.visually_similar_products_to_avoid,handoff.product.global_negative_constraints,direction.t2v_substitution?'precise values, readable scales, exact source recreation, and unsupported proprietary detail':'','dialogue','narration','music','readable generated text','invented internal systems','geometry morphing']).slice(0,12);
   const camera=state?[state.preferred_shot_scales[0],state.camera_platform_options[0],state.preferred_camera_movements[0]].filter(Boolean).join(', '):`${direction.camera.shot_scale}, ${direction.camera.angle}, ${direction.camera.lens}, ${direction.camera.movement}`;
+  const graphicAction=`Arrange ${list(unique(direction.required_visible_features))}. ${temporal?`${temporal.primary_motion}. Midway, ${temporal.mid_shot_progression}. End with ${temporal.ending_state}`:'Animate one qualitative relationship, then hold the resolved composition'}`;
+  const graphicAnchors=list(identity.anchors.slice(0,4));
+  const subject=direction.product_visibility==='NONE'
+    ?`Show no product-specific geometry; use only ${graphic?'clean unlabeled technical primitives':'a neutral non-identifying engineering context'}`
+    :graphic
+      ?`Use a simplified unlabeled silhouette of ${identity.name} only where required${graphicAnchors?`, preserving ${graphicAnchors}`:''}`
+      :`Show exactly the ${identity.name} in one stable configuration. ${positiveGeometry}`;
   const sections:OmniPromptSections={
-    cinematography:clean(raw.cinematography)||`Use one physically compatible camera instruction: ${camera}`,
-    subject:`Show exactly the ${identity.name} in one stable configuration. ${positiveGeometry}`,
-    action:[clean(raw.action)||action,relationshipText,evidenceQualification].filter(Boolean).join('. '),
-    environment:`Set the scene in ${genericEnvironment}. ${environment?.weather_and_atmosphere||''} ${environment?.ground_water_or_surface||''}`,
-    style_lighting:clean(raw.style_lighting)||`${direction.lighting_and_material}. Use evidence-led photorealistic engineering-documentary treatment`,
-    product_state:state?`Preserve this exact operational configuration: ${state.product_configuration}. Do not change ${list(state.forbidden_configuration_changes)}`:`Preserve one stable product configuration and exact product count`,
+    cinematography:clean(raw.cinematography)||`Use one physically compatible camera instruction: ${graphic?'locked orthographic composition with minimal parallax':camera}`,
+    subject,
+    action:[direction.t2v_substitution==='EDITOR_DATA_TO_TEXT_FREE_GRAPHIC'?graphicAction:direction.t2v_substitution==='BLOCKED_TO_NEUTRAL_CONTEXT'?direction.primary_action:clean(raw.action)||action,relationshipText,evidenceQualification].filter(Boolean).join('. '),
+    environment:graphic?'Use a clean borderless 16:9 technical canvas with a static cool-grey background':`Set the scene in ${genericEnvironment}. ${environment?.weather_and_atmosphere||''} ${environment?.ground_water_or_surface||''}`,
+    style_lighting:graphic?'Use premium flat 2D documentary vector styling, restrained cyan and charcoal geometry, minimal texture, and no typography':clean(raw.style_lighting)||`${direction.lighting_and_material}. Use evidence-led photorealistic engineering-documentary treatment`,
+    product_state:direction.product_visibility==='NONE'?'Keep all product-specific geometry absent':state?`Preserve this exact operational configuration: ${state.product_configuration}. Do not change ${list(state.forbidden_configuration_changes)}`:`Preserve one stable product configuration and exact product count`,
     sound,
     exclusions:list(exclusions.map(value=>value.replace(/^(no|avoid|exclude|do not)\s+/i,''))),
   };

@@ -1,6 +1,7 @@
 import type { MediaRoute, PlannedScene, TimedScene, TopicBrief, VisualTreatment } from '../types';
 import type { V3Chapter, V3MediaRoute, V3VisualBeat, VisualEngineeringHandoffV3 } from '../types/visualEngineeringV3';
 import { deriveGraphicSceneSpec } from './scenePlanner';
+import { prepareEngineeringSceneForT2V } from './engineeringT2V';
 
 const STOP=new Set(['the','and','that','this','with','from','into','while','through','about','then','than','only','also','must','still','each','when','where','which','their','there','have','has','had','does','not','without','show','scene','visual','product','system']);
 const stem=(value:string)=>value.length>5?value.replace(/(?:ing|tion|ions|ments|ment|ed|es|s)$/,''):value;
@@ -112,7 +113,7 @@ export function buildEngineeringScenePlan(topic:TopicBrief,scenes:TimedScene[]):
       .filter(item=>systemSet.has(item.from_system_id)&&systemSet.has(item.to_system_id)&&item.visualization_permission!=='NOT_ALLOWED')
       .sort((a,b)=>overlap(sceneTokens,tokens(`${a.relationship_summary} ${a.physical_or_information_path} ${a.observable_evidence.join(' ')} ${a.tradeoff}`))-overlap(sceneTokens,tokens(`${b.relationship_summary} ${b.physical_or_information_path} ${b.observable_evidence.join(' ')} ${b.tradeoff}`))).at(-1);
     const bridge=bridges.find(item=>systemSet.has(item.from_system_id)&&systemSet.has(item.to_system_id));
-    const base:PlannedScene={
+    const routedBase:PlannedScene={
       number:scene.number,handoff_mode:'ENGINEERING_V3',chapter_id:chapter.chapter_id,beat_id:beat.beat_id,
       visual_family:beat.visual_family,story_function:beat.story_function,visual_treatment:treatmentFor(beat),
       product_visibility:beat.product_visibility,environment_ref:beat.environment_ids[0]||handoff.environments[0]?.environment_id||'',
@@ -123,7 +124,8 @@ export function buildEngineeringScenePlan(topic:TopicBrief,scenes:TimedScene[]):
       media_route:selected.route.route as MediaRoute,route_reason:selected.route.reason,
       showdown_role:null,energy_level:'MEDIUM',camera_platform:null,graphic_spec:null,
     };
-    base.graphic_spec=selected.route.route==='GENERATED_T2V'&&GRAPHIC.has(beat.visual_family)?deriveGraphicSceneSpec(topic,scene,base):null;
+    const base=prepareEngineeringSceneForT2V(routedBase);
+    base.graphic_spec=GRAPHIC.has(beat.visual_family)?deriveGraphicSceneSpec(topic,scene,base):null;
     plan.push(base);
   });
   return plan;

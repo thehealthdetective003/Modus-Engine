@@ -2,6 +2,7 @@ import type { AnyVisualProductionHandoff, ProductVisibility as V2ProductVisibili
 import type { V3ContextTruthStatus, V3GenerationPermission, V3MediaRoute, V3ProductVisibility, V3StoryFunction, V3VisualFamily, VisualEngineeringHandoffV3 } from './types/visualEngineeringV3';
 
 export type HandoffMode='MANUFACTURING_V2'|'ENGINEERING_V3';
+export type EngineeringT2VSubstitution='EDITOR_DATA_TO_TEXT_FREE_GRAPHIC'|'REFERENCE_TO_CONTEXTUAL_T2V'|'BLOCKED_TO_NEUTRAL_CONTEXT';
 export type HandoffEnvelope=
   | {mode:'MANUFACTURING_V2';schemaVersion:'2.0.0';handoff:Extract<AnyVisualProductionHandoff,{schema:{version:'2.0.0'}}>}
   | {mode:'ENGINEERING_V3';schemaVersion:'3.0.0';handoff:VisualEngineeringHandoffV3};
@@ -256,6 +257,9 @@ export interface PlannedScene {
   truth_status?: V3ContextTruthStatus;
   generation_permission?: V3GenerationPermission;
   media_route?: V3MediaRoute;
+  source_generation_permission?: V3GenerationPermission;
+  source_media_route?: V3MediaRoute;
+  t2v_substitution?: EngineeringT2VSubstitution;
   route_reason?: string;
   showdown_role: ShowdownRole | null;
   energy_level: CinematicEnergy;
@@ -298,6 +302,9 @@ export interface SceneDirection {
   truth_status?: V3ContextTruthStatus;
   generation_permission?: V3GenerationPermission;
   media_route?: V3MediaRoute;
+  source_generation_permission?: V3GenerationPermission;
+  source_media_route?: V3MediaRoute;
+  t2v_substitution?: EngineeringT2VSubstitution;
   route_reason?: string;
   subject: string;
   product_visual_state: string;
@@ -326,6 +333,9 @@ export interface T2VPrompt {
   truth_status?: V3ContextTruthStatus;
   generation_permission?: V3GenerationPermission;
   media_route?: V3MediaRoute;
+  source_generation_permission?: V3GenerationPermission;
+  source_media_route?: V3MediaRoute;
+  t2v_substitution?: EngineeringT2VSubstitution;
   continuity_notes?: string;
   quality_flags?: string[];
   action_description: string;

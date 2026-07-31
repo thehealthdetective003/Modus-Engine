@@ -81,6 +81,8 @@ export function migrateProject(raw: any, initial: AppState, sceneDuration: 8 | 1
         evidence_claim_ids:handoffMode==='ENGINEERING_V3'?item.evidence_claim_ids:undefined,relationship_id:handoffMode==='ENGINEERING_V3'?item.relationship_id:undefined,
         concept_bridge_id:handoffMode==='ENGINEERING_V3'?item.concept_bridge_id:undefined,truth_status:handoffMode==='ENGINEERING_V3'?item.truth_status:undefined,
         generation_permission:handoffMode==='ENGINEERING_V3'?item.generation_permission:undefined,media_route:handoffMode==='ENGINEERING_V3'?item.media_route:undefined,
+        source_generation_permission:handoffMode==='ENGINEERING_V3'?item.source_generation_permission:undefined,source_media_route:handoffMode==='ENGINEERING_V3'?item.source_media_route:undefined,
+        t2v_substitution:handoffMode==='ENGINEERING_V3'?item.t2v_substitution:undefined,
         continuity_notes: item.continuity_notes, quality_flags: item.quality_flags,
         action_description: String(item.action_description || ''), video_prompt: String(item.video_prompt || ''),
         voiceover: transcription.scenes[number - 1]?.text || '', stock_keywords: String(item.stock_keywords || ''),

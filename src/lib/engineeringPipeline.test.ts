@@ -8,6 +8,8 @@ import { buildEngineeringPromptContext, compileEngineeringOmniPrompt } from './e
 import { importTranscriptionJson } from './transcriptionImport';
 import { mergeDirectionMetadata, validateSceneDirections } from './sceneDirections';
 import { buildModeAwareScenePlan } from './documentaryScenePlanner';
+import { engineeringT2VSubstitutionCount, prepareEngineeringSceneForT2V } from './engineeringT2V';
+import { missingDirections } from './promptBatch';
 
 const clone=<T>(value:T):T=>JSON.parse(JSON.stringify(value));
 const generatedDirection=(number:number)=>({number,subject:'The exact EX-1 test aircraft',product_visual_state:'Complete EX-1 test configuration',primary_action:'One external control surface deflects once',supporting_motion:'Light dust responds to the crosswind',environment_description:'A generic non-identifying paved test range',camera:{shot_scale:'medium-wide',lens:'normal',angle:'rear three-quarter',movement:'locked camera',movement_speed:'none'},lighting_and_material:'Neutral daylight on matte aircraft surfaces',continuity_from_previous:'Opening engineering clue',transition_to_next:'Hold on the returned neutral surface',required_visible_features:['two outward-canted tails','one external control surface'],forbidden_elements:['unknown internal actuator layout','readable text'],temporal_action:{opening_state:'The aircraft rests stationary',primary_motion:'One control surface begins to deflect',physical_interaction:'The surface responds to one control command',mid_shot_progression:'The surface reaches its commanded angle',ending_state:'The surface returns to neutral'}});
@@ -86,4 +88,34 @@ test('runs the V3 import-to-plan-to-prompt path while preserving exact VO locall
   assert.equal(directions[0].voiceover,'A visible control surface responds to one command.');
   assert.ok(compiled.prompt.length>100);
   assert.equal(directions[0].media_route,'GENERATED_T2V');
+});
+
+test('converts editor and reference routes into truthful generated T2V substitutes',()=>{
+  const handoff=makeValidEngineeringHandoff(),beat=handoff.visual_story_plan.chapters[0].visual_beats[0];
+  beat.visual_family='TECHNICAL_GRAPHIC';beat.product_visibility='NONE';beat.generation_permission='EDITOR_ONLY';beat.preferred_media_routes=['EDITOR_NATIVE_GRAPHIC'];
+  const topic=normalizeEngineeringHandoff(handoff);
+  const scenes=Array.from({length:99},(_,index)=>({number:index+1,start:index*10,end:(index+1)*10,duration:10,text:'A qualitative control relationship is shown without readable data.',silent:false}));
+  const plan=buildEngineeringScenePlan(topic,scenes);
+  assert.equal(plan.length,99);
+  assert.equal(plan.every(item=>item.media_route==='GENERATED_T2V'&&item.generation_permission==='T2V_ALLOWED'),true);
+  assert.equal(engineeringT2VSubstitutionCount(plan),99);
+  assert.equal(plan[0].source_media_route,'EDITOR_NATIVE_GRAPHIC');
+  assert.equal(plan[0].t2v_substitution,'EDITOR_DATA_TO_TEXT_FREE_GRAPHIC');
+  const existing=Array.from({length:57},(_,index)=>({number:index+1,video_prompt:'existing'} as any));
+  assert.equal(missingDirections(plan as any,existing).length,42);
+});
+
+test('compiles a restricted saved direction as a text-free T2V prompt instead of rejecting it',()=>{
+  const handoff=makeValidEngineeringHandoff(),topic=normalizeEngineeringHandoff(handoff);
+  const timed={number:1,start:0,end:10,duration:10,text:'The report compares exact numeric test results.',silent:false};
+  const [planned]=buildEngineeringScenePlan(topic,[timed]);
+  const [direction]=mergeDirectionMetadata([{...generatedDirection(1),required_visible_features:['three grey hull blocks','one cyan band']}],[timed],[planned]);
+  const restricted={...direction,generation_permission:'EDITOR_ONLY' as const,media_route:'EDITOR_NATIVE_GRAPHIC' as const,visual_treatment:'STATIC_GRAPHIC_T2V' as const,product_visibility:'NONE' as const};
+  const effective=prepareEngineeringSceneForT2V(restricted);
+  const compiled=compileEngineeringOmniPrompt({action:'Show 96.23 percent with readable labels.'},restricted,topic);
+  assert.equal(effective.media_route,'GENERATED_T2V');
+  assert.equal(effective.t2v_substitution,'EDITOR_DATA_TO_TEXT_FREE_GRAPHIC');
+  assert.match(compiled.prompt,/qualitative relationship/i);
+  assert.doesNotMatch(compiled.prompt,/96\.23/);
+  assert.match(compiled.prompt,/Exclude .*readable labels/i);
 });

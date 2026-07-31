@@ -48,7 +48,7 @@ export function mergeDirectionMetadata(generated: any[], timedScenes: TimedScene
       },
     };
     return plan?.handoff_mode==='ENGINEERING_V3'
-      ?{...common,engineering_system_ids:plan.engineering_system_ids||[],operational_state_ids:plan.operational_state_ids||[],evidence_claim_ids:plan.evidence_claim_ids||[],geometry_module_ids:plan.geometry_module_ids||[],relationship_id:plan.relationship_id??null,concept_bridge_id:plan.concept_bridge_id??null,truth_status:plan.truth_status,generation_permission:plan.generation_permission,media_route:plan.media_route,route_reason:plan.route_reason} as SceneDirection
+      ?{...common,engineering_system_ids:plan.engineering_system_ids||[],operational_state_ids:plan.operational_state_ids||[],evidence_claim_ids:plan.evidence_claim_ids||[],geometry_module_ids:plan.geometry_module_ids||[],relationship_id:plan.relationship_id??null,concept_bridge_id:plan.concept_bridge_id??null,truth_status:plan.truth_status,generation_permission:plan.generation_permission,media_route:plan.media_route,source_generation_permission:plan.source_generation_permission,source_media_route:plan.source_media_route,t2v_substitution:plan.t2v_substitution,route_reason:plan.route_reason} as SceneDirection
       :{...common,stage_id:plan?.stage_id||String(item.stage_id||''),state:plan?.state||String(item.state||'').toUpperCase().replace(/^STATE[_\s-]*/,'') as 'A'|'B'|'C'} as SceneDirection;
   });
 }
@@ -70,7 +70,7 @@ export function validateSceneDirections(directions: unknown, timedScenes: TimedS
     if (String(direction.voiceover ?? '') !== timed.text || Boolean(direction.silent) !== timed.silent) errors.push(`${label}: imported VO or silence metadata was modified.`);
     const plan = plannedScenes?.find(item => item.number === number);
     const immutableFields=plan?.handoff_mode==='ENGINEERING_V3'
-      ?['handoff_mode','chapter_id','beat_id','visual_family','story_function','visual_treatment','product_visibility','showdown_role','energy_level','camera_platform','engineering_system_ids','operational_state_ids','evidence_claim_ids','geometry_module_ids','relationship_id','concept_bridge_id','truth_status','generation_permission','media_route','route_reason'] as const
+      ?['handoff_mode','chapter_id','beat_id','visual_family','story_function','visual_treatment','product_visibility','showdown_role','energy_level','camera_platform','engineering_system_ids','operational_state_ids','evidence_claim_ids','geometry_module_ids','relationship_id','concept_bridge_id','truth_status','generation_permission','media_route','source_generation_permission','source_media_route','t2v_substitution','route_reason'] as const
       :['handoff_mode','chapter_id','beat_id','visual_family','story_function','visual_treatment','product_visibility','showdown_role','energy_level','camera_platform','stage_id','state'] as const;
     if (plan) immutableFields.forEach(field => {
       const expected=(field==='showdown_role'||field==='camera_platform')?(plan[field]??null):plan[field];
