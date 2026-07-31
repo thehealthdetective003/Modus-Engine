@@ -35,7 +35,7 @@ export function Phase2Script({state,setState}:Props){
   const apiKey=settings.apiKey||process.env.GEMINI_API_KEY;if(!apiKey)return toast.error('Add a Gemini API key in Settings.');
   setIsLoading(true);
   try{
-   const ai=new GoogleGenAI({apiKey}); const plan=resume?state.plannedScenes:buildModeAwareScenePlan(state.topic,transcript.scenes); const generated:any[]=resume?[...state.sceneDirections]:[];
+   const ai=new GoogleGenAI({apiKey}); const plan=resume?state.plannedScenes:buildModeAwareScenePlan(state.handoffMode,state.topic,transcript.scenes); const generated:any[]=resume?[...state.sceneDirections]:[];
    if(!resume)setState(p=>({...p,plannedScenes:plan,sceneDirections:[],visualPrompts:[],demoScenes:[],demoSceneNumbers:[],demoState:'idle',phase:2}));
    for(let offset=generated.length;offset<scenes.length;offset+=30){
     const timedBatch=scenes.slice(offset,offset+30),planBatch=plan.slice(offset,offset+30);setBatchStatus(`batch ${Math.floor(offset/30)+1}/${Math.ceil(scenes.length/30)} · scenes ${timedBatch[0].number}–${timedBatch.at(-1)?.number}`);

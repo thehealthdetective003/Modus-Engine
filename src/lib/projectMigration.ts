@@ -2,7 +2,7 @@ import { AppState, T2VPrompt } from '../types';
 import { resplitTranscription } from './timedTranscript';
 import { mergeDirectionMetadata, validateSceneDirections } from './sceneDirections';
 import { deriveGraphicSceneSpec, resolvePlannedState } from './scenePlanner';
-import { handoffModeFor, validateVisualProductionHandoff } from './handoffValidation';
+import { handoffModeFor, validateHandoffForMode } from './handoffValidation';
 
 export type MigrationResult = { state: AppState | null; message?: string; error?: string };
 
@@ -18,10 +18,11 @@ export function migrateProject(raw: any, initial: AppState, sceneDuration: 8 | 1
   const rawHandoff=raw.rawHandoff||raw.topic?._production_handoff||null;
   const detectedMode=handoffModeFor(rawHandoff||raw.topic);
   if(raw.handoffMode&&detectedMode&&raw.handoffMode!==detectedMode)return {state:null,error:`Project mode ${raw.handoffMode} conflicts with its detected ${detectedMode} handoff.`};
-  const handoffMode=raw.handoffMode||detectedMode||'MANUFACTURING_V2';
+  const handoffMode=raw.handoffMode||detectedMode||null;
+  if(raw.topic&&!handoffMode)return {state:null,error:'This project has handoff data but no safely detectable handoff type. Re-import its source JSON and explicitly select Factory Manufacturing or Visual Engineering V3.'};
   const schemaVersion=raw.schemaVersion||rawHandoff?.schema?.version||raw.topic?.schema_version||null;
   if(handoffMode==='ENGINEERING_V3'){
-    const validation=validateVisualProductionHandoff(rawHandoff);
+    const validation=validateHandoffForMode(rawHandoff,'ENGINEERING_V3');
     if(!validation.valid)return {state:null,error:`Invalid Engineering V3 project: ${validation.errors[0]?.path||'/'} ${validation.errors[0]?.message||''}`.trim()};
   }
 

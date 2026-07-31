@@ -7,6 +7,7 @@ import { buildEngineeringScenePlan, resolveEngineeringMediaRoute } from './engin
 import { buildEngineeringPromptContext, compileEngineeringOmniPrompt } from './engineeringPromptComposer';
 import { importTranscriptionJson } from './transcriptionImport';
 import { mergeDirectionMetadata, validateSceneDirections } from './sceneDirections';
+import { buildModeAwareScenePlan } from './documentaryScenePlanner';
 
 const clone=<T>(value:T):T=>JSON.parse(JSON.stringify(value));
 const generatedDirection=(number:number)=>({number,subject:'The exact EX-1 test aircraft',product_visual_state:'Complete EX-1 test configuration',primary_action:'One external control surface deflects once',supporting_motion:'Light dust responds to the crosswind',environment_description:'A generic non-identifying paved test range',camera:{shot_scale:'medium-wide',lens:'normal',angle:'rear three-quarter',movement:'locked camera',movement_speed:'none'},lighting_and_material:'Neutral daylight on matte aircraft surfaces',continuity_from_previous:'Opening engineering clue',transition_to_next:'Hold on the returned neutral surface',required_visible_features:['two outward-canted tails','one external control surface'],forbidden_elements:['unknown internal actuator layout','readable text'],temporal_action:{opening_state:'The aircraft rests stationary',primary_motion:'One control surface begins to deflect',physical_interaction:'The surface responds to one control command',mid_shot_progression:'The surface reaches its commanded angle',ending_state:'The surface returns to neutral'}});
@@ -34,6 +35,14 @@ test('plans V3 scenes with systems, state, relationship, evidence, route, and no
   assert.equal(plan[0].media_route,'GENERATED_T2V');
   assert.equal(plan[0].stage_id,undefined);
   assert.equal(plan[0].state,undefined);
+});
+
+test('stored handoff mode controls downstream planner dispatch',()=>{
+  const topic=normalizeEngineeringHandoff(makeValidEngineeringHandoff());
+  const scenes=[{number:1,start:0,end:10,duration:10,text:'A command moves one external control surface.',silent:false}];
+  const plan=buildModeAwareScenePlan('ENGINEERING_V3',topic,scenes);
+  assert.equal(plan[0].handoff_mode,'ENGINEERING_V3');
+  assert.throws(()=>buildModeAwareScenePlan(null,topic,scenes),/Select and import a handoff type/);
 });
 
 test('Engineering prompt context is focused and excludes transcript wording',()=>{

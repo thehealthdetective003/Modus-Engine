@@ -26,7 +26,7 @@ import { toast } from 'sonner';
 import { resplitTranscription, resetDownstreamForTiming } from './lib/timedTranscript';
 import { migrateProject, projectSceneDuration } from './lib/projectMigration';
 const PHASES = [
-  { id: 1, label: 'TOPIC', description: 'Select Manufacturing Subject' },
+  { id: 1, label: 'TOPIC', description: 'Select Handoff Contract' },
   { id: 2, label: 'VO & DIRECTION', description: 'Import Timestamps and Direct Scenes' },
   { id: 3, label: 'T2V PROMPTS', description: 'Generate Timestamped Video Prompts' },
 ];
@@ -37,7 +37,7 @@ export const INITIAL_STATE: AppState = {
   schemaVersion: null,
   rawHandoff: null,
   id: undefined,
-  projectName: 'Untitled Manufacturing Sequence',
+  projectName: 'Untitled Production Project',
   projectFormat: 'standard-lifecycle',
   phase: 1,
   topic: null,

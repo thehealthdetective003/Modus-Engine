@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import template from '../schemas/Modus_Visual_Production_Handoff_V2_Template.json';
 import { LEGACY_PRODUCTION_TEMPLATE, normalizeProductionHandoff } from './productionTemplate';
-import { parseAndValidateHandoffJson, validateVisualProductionHandoff } from './handoffValidation';
+import { parseAndValidateHandoffJson, parseAndValidateHandoffJsonForMode, reviewMustShowEntry, validateHandoffForMode, validateVisualProductionHandoff } from './handoffValidation';
 import { makeValidEngineeringHandoff } from '../testFixtures/engineeringV3';
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
@@ -132,7 +132,7 @@ test('V3 evidence and routing rules block unsupported exact and forbidden genera
 
   const notAllowed:any=clone(makeValidEngineeringHandoff());
   notAllowed.evidence_boundaries.claims[0].visualization_permission='NOT_ALLOWED';
-  assert.ok(validateVisualProductionHandoff(notAllowed).errors.some(error=>error.message.includes('not allowed')));
+  assert.ok(validateVisualProductionHandoff(notAllowed).errors.some(error=>error.code==='evidence'&&error.message.includes('NOT_ALLOWED')));
 
   const exact:any=clone(makeValidEngineeringHandoff());
   exact.visual_story_plan.chapters[0].visual_beats[0].exact_event_or_location_claim_allowed=true;
@@ -151,4 +151,46 @@ test('V3 requires four systems and meaningful beat alignment',()=>{
   const result=validateVisualProductionHandoff(value);
   assert.ok(result.errors.some(error=>error.message.includes('at least four')));
   assert.ok(result.errors.some(error=>error.message.includes('semantic-alignment')));
+});
+
+test('selected handoff type exclusively controls validation and reports mode mismatch',()=>{
+  const v3=makeValidEngineeringHandoff();
+  const wrongManufacturing=validateHandoffForMode(v3,'MANUFACTURING_V2');
+  assert.equal(wrongManufacturing.valid,false);
+  assert.equal(wrongManufacturing.selectedMode,'MANUFACTURING_V2');
+  assert.equal(wrongManufacturing.declaredMode,'ENGINEERING_V3');
+  assert.equal(wrongManufacturing.schemaErrors.length,1);
+  assert.equal(wrongManufacturing.schemaErrors[0].code,'mode-mismatch');
+  assert.match(wrongManufacturing.schemaErrors[0].message,/Select Visual Engineering Handoff V3/);
+  assert.equal(wrongManufacturing.semanticErrors.length,0);
+
+  const wrongEngineering=validateHandoffForMode(template,'ENGINEERING_V3');
+  assert.equal(wrongEngineering.valid,false);
+  assert.equal(wrongEngineering.schemaErrors[0].code,'mode-mismatch');
+  assert.match(wrongEngineering.schemaErrors[0].message,/Select Factory Manufacturing Handoff/);
+
+  const rightEngineering=parseAndValidateHandoffJsonForMode(JSON.stringify(v3),'ENGINEERING_V3');
+  assert.equal(rightEngineering.result.valid,true);
+  assert.equal(rightEngineering.result.selectedMode,'ENGINEERING_V3');
+});
+
+test('Engineering V3 remains closed and rejects manufacturing lifecycle fields',()=>{
+  const mixed:any=clone(makeValidEngineeringHandoff());
+  mixed.lifecycle_stages=[];
+  const result=validateHandoffForMode(mixed,'ENGINEERING_V3');
+  assert.equal(result.valid,false);
+  assert.ok(result.errors.some(error=>error.code==='schema'||error.code==='mixed-mode'));
+});
+
+test('must_show review accepts concrete plural primitives and reports exact abstract values',()=>{
+  for(const value of ['two grey hull blocks','four vertical steel posts','one blue waterline becomes level','three white wake lines converge behind the stern','two technicians']){
+    assert.equal(reviewMustShowEntry(value,'/must_show/0'),null,value);
+  }
+  for(const [index,value] of ['operational capability','proof of maturity','mission success','system reliability'].entries()){
+    const result=reviewMustShowEntry(value,`/visual_story_plan/chapters/0/visual_beats/0/must_show/${index}`);
+    assert.ok(result);
+    assert.equal(result?.severity,'warning');
+    assert.equal(result?.path,`/visual_story_plan/chapters/0/visual_beats/0/must_show/${index}`);
+    assert.match(result?.message||'',new RegExp(value));
+  }
 });

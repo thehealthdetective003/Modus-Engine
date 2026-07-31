@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { CheckCircle2, Download, Copy, ChevronDown, ChevronUp, AlertCircle, AlertTriangle, ArrowRight, FileJson } from 'lucide-react';
+import { CheckCircle2, Download, Copy, ChevronDown, ChevronUp, AlertCircle, AlertTriangle, ArrowRight, FileJson, Factory, Cog } from 'lucide-react';
 import { toast } from 'sonner';
-import { AppState, TopicBrief } from '../types';
+import { AppState, HandoffMode, TopicBrief } from '../types';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,7 +17,7 @@ import { normalizeTopicBrief, validateAdaptiveBrief, validateAdaptiveWarnings, g
 import { StandardPreview } from './previews/StandardPreview';
 import { useSettings } from './SettingsContext';
 import { DEFAULT_PRODUCTION_TEMPLATE, normalizeVisualHandoff, productionTemplatePrompt } from '../lib/productionTemplate';
-import { HandoffValidationResult, parseAndValidateHandoffJson, validateVisualProductionHandoff } from '../lib/handoffValidation';
+import { HANDOFF_MODE_LABELS, HandoffValidationResult, handoffModeFor, parseAndValidateHandoffJsonForMode, validateHandoffForMode } from '../lib/handoffValidation';
 import { EngineeringHandoffInspector } from './previews/EngineeringHandoffInspector';
 import type { VisualEngineeringHandoffV3 } from '../types/visualEngineeringV3';
 interface Phase1TopicProps {
@@ -36,6 +36,8 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
   const [isValid, setIsValid] = useState(false);
   const [parsedBrief, setParsedBrief] = useState<TopicBrief | null>(null);
   const [validationResult, setValidationResult] = useState<HandoffValidationResult | null>(null);
+  const [selectedMode, setSelectedMode] = useState<HandoffMode|null>(state.handoffMode);
+  const activeTemplateMode=handoffModeFor(activeProductionTemplate);
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -48,25 +50,38 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isValid, parsedBrief, jsonInput]);
+  }, [isValid, parsedBrief, jsonInput, selectedMode]);
   useEffect(() => {
     if (state.topic && !jsonInput) {
-      setJsonInput(JSON.stringify(state.topic, null, 2));
+      const mode=state.handoffMode||handoffModeFor(state.rawHandoff||state.topic);
+      const source=state.rawHandoff||state.topic._production_handoff||state.topic;
+      setSelectedMode(mode);
+      setJsonInput(JSON.stringify(source, null, 2));
       setParsedBrief(state.topic);
-      const result = validateVisualProductionHandoff(state.topic);
+      const result = mode?validateHandoffForMode(source,mode):null;
       setValidationResult(result);
-      setIsValid(result.valid);
-    } else if (!state.topic && !jsonInput) {
-      setJsonInput(standardBlankTemplate);
+      setIsValid(Boolean(result?.valid));
     }
-  }, [state.topic, jsonInput, standardBlankTemplate]);
+  }, [state.topic, state.handoffMode, state.rawHandoff, jsonInput]);
+  useEffect(()=>{
+    if(!state.topic&&!state.handoffMode&&!state.rawHandoff){
+      setSelectedMode(null);setJsonInput('');setShowPasteEditor(false);setValidationResult(null);setParsedBrief(null);setIsValid(false);setError(null);setWarnings([]);
+    }
+  },[state.topic,state.handoffMode,state.rawHandoff]);
+  const chooseMode=(mode:HandoffMode)=>{
+    if(mode===selectedMode)return;
+    setSelectedMode(mode);
+    setValidationResult(null);setParsedBrief(null);setIsValid(false);setError(null);setWarnings([]);
+  };
   const handleDownloadTemplate = () => {
+    if(!selectedMode){toast.error('Select a handoff type first.');return;}
+    if(activeTemplateMode!==selectedMode){toast.error(`The active Settings template is ${activeTemplateMode?HANDOFF_MODE_LABELS[activeTemplateMode]:'not recognized'}. Import a matching template in Settings first.`);return;}
     const template = standardBlankTemplate;
     const blob = new Blob([template], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'standard-lifecycle_brief_template.json';
+    a.download = selectedMode==='ENGINEERING_V3'?'visual-engineering-handoff-v3-template.json':'visual-production-handoff-v2-template.json';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -74,6 +89,8 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
     toast.success('Template downloaded');
   };
   const handleCopyPrompt = async () => {
+    if(!selectedMode){toast.error('Select a handoff type first.');return;}
+    if(activeTemplateMode!==selectedMode){toast.error('The active Settings template does not match the selected handoff type.');return;}
     const promptText = productionTemplatePrompt(activeProductionTemplate);
     const success = await copyToClipboard(promptText);
     if (success) {
@@ -83,9 +100,10 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
     }
   };
   const handleImportBrief = async (file: File) => {
+    if(!selectedMode){toast.error('Select a handoff type before importing JSON.');return;}
     try {
       const fileText=await file.text();
-      const {data:parsed,result}=parseAndValidateHandoffJson(fileText);
+      const {data:parsed,result}=parseAndValidateHandoffJsonForMode(fileText,selectedMode);
       if(!parsed){
         setValidationResult(result);setError('Invalid JSON file. Check its syntax and try again.');
         return;
@@ -100,7 +118,7 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
         toast.error('Invalid handoff JSON. The current project was not changed.');
       }
     } catch {
-      setValidationResult(validateVisualProductionHandoff(null));
+      setValidationResult(validateHandoffForMode(null,selectedMode));
       setError('Invalid JSON file. Check its syntax and try again.');
     }
   };
@@ -110,52 +128,57 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
     setIsValid(false);
     setParsedBrief(null);
     setValidationResult(null);
+    if(!selectedMode){setError('Select Factory Manufacturing Handoff or Visual Engineering Handoff V3 first.');return;}
     if (!jsonInput.trim()) {
       setError('Please paste some JSON first.');
       return;
     }
     try {
-      const {data:parsed,result}=parseAndValidateHandoffJson(jsonInput);
+      const {data:parsed,result}=parseAndValidateHandoffJsonForMode(jsonInput,selectedMode);
       setValidationResult(result);
       if (!parsed||!result.valid) {
         setError('Invalid handoff JSON. Fix the listed schema or reference errors before loading it.');
         return;
       }
       const normalized = ['v1','v2','v3'].includes(result.format) ? normalizeVisualHandoff(parsed) : normalizeTopicBrief(parsed);
-      const missing = validateAdaptiveBrief(normalized);
-      const adaptiveWarnings = validateAdaptiveWarnings(normalized);
+      const manufacturing=result.mode==='MANUFACTURING_V2';
+      const missing = manufacturing?validateAdaptiveBrief(normalized):[];
+      const adaptiveWarnings = manufacturing?validateAdaptiveWarnings(normalized):[];
       
       if (missing.length > 0) {
-        setWarnings([...missing.map(item => `Missing: ${item}`), ...adaptiveWarnings,...result.warnings.map(item=>`${item.path}: ${item.message}`)]);
+        setWarnings([...missing.map(item => `Missing: ${item}`), ...adaptiveWarnings]);
         // We still allow it if it's valid JSON, but user needs to be aware
         setParsedBrief(normalized as TopicBrief);
         setIsValid(true);
       } else {
-        setWarnings([...adaptiveWarnings,...result.warnings.map(item=>`${item.path}: ${item.message}`)]);
+        setWarnings(adaptiveWarnings);
         setParsedBrief(normalized as TopicBrief);
         setIsValid(true);
       }
     } catch (e) {
-      setValidationResult(validateVisualProductionHandoff(null));
+      setValidationResult(validateHandoffForMode(null,selectedMode));
       setError('Invalid JSON. Check your brackets and quotes.');
     }
   };
   const handleLockTopic = () => {
-    if (!parsedBrief) return;
+    if (!parsedBrief||!selectedMode||!validationResult?.valid||validationResult.selectedMode!==selectedMode) return;
     
     setState((prev) => ({
       ...prev,
       topic: parsedBrief,
-      handoffMode:validationResult?.mode||'MANUFACTURING_V2',
+      handoffMode:selectedMode,
       schemaVersion:validationResult?.version||parsedBrief.schema_version||null,
       rawHandoff:parsedBrief._production_handoff||null,
-      scenePlanFormatVersion:validationResult?.mode==='ENGINEERING_V3'?3:2,
+      scenePlanFormatVersion:selectedMode==='ENGINEERING_V3'?3:2,
       masterVoiceoverScript: parsedBrief.master_voiceover_script || '',
       projectName: parsedBrief.topic?.product || parsedBrief.topic?.title || "Untitled",
       plannedScenes: [], sceneDirections: [], visualPrompts: [], demoScenes: [], demoSceneNumbers: [], demoState: 'idle',
       phase: 2,
     }));
   };
+  let declaredContractType='—';
+  try{declaredContractType=String(JSON.parse(jsonInput)?.schema?.contract_type||'—');}catch{}
+  const selectedModeLabel=selectedMode?HANDOFF_MODE_LABELS[selectedMode]:'Not selected';
   return (
     <div className="flex flex-col h-full w-full space-y-6 pb-20">
       {/* 1. TOP SECTION - Instructions */}
@@ -170,9 +193,7 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
         </CollapsibleTrigger>
         <CollapsibleContent className="p-4 pt-0 space-y-4">
           <p className="text-sm text-muted-foreground leading-relaxed">
-            Prepare your topic brief externally using an LLM (ChatGPT, Gemini, etc.), 
-            then import the completed JSON here. The app will read it and pre-fill all 
-            phases automatically.
+            Choose the contract that produced your handoff, then import or paste its JSON. The selected contract controls validation, review, storage, scene planning, and prompt generation.
           </p>
           <div className="flex flex-wrap gap-3">
             <Button 
@@ -196,15 +217,44 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
           </div>
         </CollapsibleContent>
       </Collapsible>
+      <div className="space-y-3">
+        <div>
+          <p className="text-xs font-mono font-bold tracking-widest text-amber-500">SELECT HANDOFF TYPE</p>
+          <p className="text-[11px] text-muted-foreground mt-1">Required before JSON input. The app will never silently switch validators.</p>
+        </div>
+        <div className="grid md:grid-cols-2 gap-3">
+          <button
+            type="button"
+            aria-pressed={selectedMode==='MANUFACTURING_V2'}
+            onClick={()=>chooseMode('MANUFACTURING_V2')}
+            className={cn('text-left rounded-xl border p-4 transition-all',selectedMode==='MANUFACTURING_V2'?'border-amber-500 bg-amber-500/10 ring-2 ring-amber-500/20':'border-border bg-card hover:border-amber-500/40')}
+          >
+            <div className="flex items-center justify-between gap-3"><span className="flex items-center gap-2 font-mono font-bold text-sm"><Factory className="h-4 w-4"/>FACTORY MANUFACTURING HANDOFF</span>{selectedMode==='MANUFACTURING_V2'&&<CheckCircle2 className="h-5 w-5 text-amber-500"/>}</div>
+            <p className="text-xs text-muted-foreground mt-2 leading-relaxed">Manufacturing stages, factory flow, assembly progression, production environments, and stage transitions.</p>
+            <p className="text-[10px] font-mono mt-3 text-amber-500/80">V2 · PRODUCTION STAGES · FACTORY LIFECYCLE</p>
+          </button>
+          <button
+            type="button"
+            aria-pressed={selectedMode==='ENGINEERING_V3'}
+            onClick={()=>chooseMode('ENGINEERING_V3')}
+            className={cn('text-left rounded-xl border p-4 transition-all',selectedMode==='ENGINEERING_V3'?'border-violet-500 bg-violet-500/10 ring-2 ring-violet-500/20':'border-border bg-card hover:border-violet-500/40')}
+          >
+            <div className="flex items-center justify-between gap-3"><span className="flex items-center gap-2 font-mono font-bold text-sm"><Cog className="h-4 w-4"/>VISUAL ENGINEERING HANDOFF V3</span>{selectedMode==='ENGINEERING_V3'&&<CheckCircle2 className="h-5 w-5 text-violet-400"/>}</div>
+            <p className="text-xs text-muted-foreground mt-2 leading-relaxed">Engineering systems, operational states, evidence boundaries, system relationships, and visual-story chapters.</p>
+            <p className="text-[10px] font-mono mt-3 text-violet-400/80">V3.0.0 · EVIDENCE · SYSTEMS · STATES</p>
+          </button>
+        </div>
+      </div>
       {/* 2. MIDDLE SECTION - JSON Paste */}
       <div className="space-y-4">
         <div className="grid sm:grid-cols-[1fr_auto] gap-3">
-          <Button className="relative h-14 bg-amber-500 hover:bg-amber-600 text-amber-950 font-bold tracking-widest">
+          <Button disabled={!selectedMode} className="relative h-14 bg-amber-500 hover:bg-amber-600 text-amber-950 font-bold tracking-widest disabled:opacity-40">
             <FileJson className="h-5 w-5 mr-2"/>IMPORT HANDOFF JSON
-            <input type="file" accept=".json,application/json" className="absolute inset-0 opacity-0 cursor-pointer" onChange={event=>{const file=event.target.files?.[0]; if(file) handleImportBrief(file); event.currentTarget.value='';}}/>
+            <input disabled={!selectedMode} type="file" accept=".json,application/json" className="absolute inset-0 opacity-0 cursor-pointer disabled:cursor-not-allowed" onChange={event=>{const file=event.target.files?.[0]; if(file) handleImportBrief(file); event.currentTarget.value='';}}/>
           </Button>
-          <Button variant="outline" className="h-14" onClick={()=>setShowPasteEditor(value=>!value)}>{showPasteEditor?'HIDE JSON EDITOR':'PASTE JSON (OPTIONAL)'}</Button>
+          <Button disabled={!selectedMode} variant="outline" className="h-14" onClick={()=>setShowPasteEditor(value=>!value)}>{showPasteEditor?'HIDE JSON EDITOR':'PASTE JSON (OPTIONAL)'}</Button>
         </div>
+        {!selectedMode&&<div className="rounded-md border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-500 font-mono">Select one handoff type to enable import and paste controls.</div>}
         <div className="space-y-2 block">
           {/* Left Column: Existing JSON Blueprint Box */}
           <div className="space-y-2 block">
@@ -242,20 +292,22 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
           </motion.div>
         )}
         {validationResult && (
-          <div className={cn(
-            'rounded-md border p-3 font-mono text-xs',
-            validationResult.valid
-              ? 'border-green-500/30 bg-green-500/10 text-green-400'
-              : 'border-destructive/30 bg-destructive/10 text-destructive'
-          )}>
-            <div className="font-bold uppercase tracking-wider">{validationResult.status}</div>
-            {!validationResult.valid && validationResult.errors.length > 0 && (
-              <ul className="mt-2 list-disc space-y-1 pl-5">
-                {validationResult.errors.map((item, index) => (
-                  <li key={`${item.path}-${item.code}-${index}`}><span className="font-bold">{item.path}</span>: {item.message}</li>
-                ))}
-              </ul>
-            )}
+          <div className={cn('rounded-xl border p-4 font-mono text-xs space-y-4',validationResult.valid?'border-green-500/30 bg-green-500/5':'border-destructive/30 bg-destructive/5')}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className={cn('font-bold uppercase tracking-wider',validationResult.valid?'text-green-400':'text-destructive')}>{validationResult.status}</div>
+              <Badge variant="outline">{selectedModeLabel}</Badge>
+            </div>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-2">
+              {[
+                ['JSON SYNTAX',validationResult.syntaxErrors.length?'FAILED':'PASSED'],
+                ['SELECTED TYPE',selectedModeLabel],
+                ['DECLARED CONTRACT',`${validationResult.schemaName||'Unknown'} · ${validationResult.version||'No version'} · ${declaredContractType}`],
+                ['IMPORT READINESS',validationResult.valid?'READY':'BLOCKED'],
+              ].map(([label,value])=><div key={label} className="rounded border border-border/50 bg-background/40 p-3"><div className="text-[9px] text-muted-foreground tracking-widest">{label}</div><div className="mt-1 text-[10px] font-bold break-words">{value}</div></div>)}
+            </div>
+            {validationResult.schemaErrors.length>0&&<div><div className="font-bold text-destructive">SCHEMA / MODE</div><ul className="mt-2 list-disc space-y-1 pl-5">{validationResult.schemaErrors.map((item,index)=><li key={`${item.path}-${item.code}-${index}`}><span className="font-bold">{item.path}</span>: {item.message}{item.suggestedCorrection&&<span className="text-muted-foreground"> — {item.suggestedCorrection}</span>}</li>)}</ul></div>}
+            {validationResult.semanticErrors.filter(item=>item.severity==='error').length>0&&<div><div className="font-bold text-destructive">REFERENTIAL & CONTRACT REVIEW</div><ul className="mt-2 list-disc space-y-1 pl-5">{validationResult.semanticErrors.filter(item=>item.severity==='error').map((item,index)=><li key={`${item.path}-${item.code}-${index}`}><span className="font-bold">{item.path}</span>: {item.message}{item.suggestedCorrection&&<span className="text-muted-foreground"> — {item.suggestedCorrection}</span>}</li>)}</ul></div>}
+            {validationResult.warnings.length>0&&<div><div className="font-bold text-amber-500">REVIEW WARNINGS · {validationResult.warnings.length}</div><ul className="mt-2 list-disc space-y-1 pl-5 text-amber-500">{validationResult.warnings.map((item,index)=><li key={`${item.path}-${item.code}-${index}`}><span className="font-bold">{item.path}</span>: {item.message}</li>)}</ul></div>}
           </div>
         )}
         {warnings.length > 0 && (
@@ -276,6 +328,7 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
         <div className="relative">
           <Button
             onClick={handleValidate}
+            disabled={!selectedMode}
             className={cn(
               "w-full h-14 font-bold text-lg tracking-widest transition-all duration-300",
               isValid 
@@ -289,7 +342,7 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
                 VALIDATED
               </motion.div>
             ) : (
-              'VALIDATE & LOAD'
+              selectedMode?'VALIDATE & LOAD':'SELECT HANDOFF TYPE FIRST'
             )}
           </Button>
           <div className="absolute -bottom-5 inset-x-0 text-center text-[10px] text-muted-foreground/60 hidden md:block">

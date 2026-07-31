@@ -20,6 +20,7 @@ export interface Settings {
   defaultStyle: string;
   sceneDurationSeconds: 8 | 10;
   productionTemplate?: Record<string, any>;
+  productionTemplateMode?: HandoffMode;
   productionTemplateName?: string;
   productionTemplateImportedAt?: string;
 }

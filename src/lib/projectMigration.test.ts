@@ -105,3 +105,9 @@ test('round-trips Engineering V3 mode and derived metadata without adding V2 sta
   assert.equal(result.state?.sceneDirections[0].state,undefined);
   assert.equal(result.state?.visualPrompts[0].media_route,'GENERATED_T2V');
 });
+
+test('requires an explicit type when legacy project evidence cannot identify a handoff',()=>{
+  const result=migrateProject({projectSchemaVersion:10,projectFormat:'standard-lifecycle',phase:1,topic:{unrecognized:true}},initial,10);
+  assert.equal(result.state,null);
+  assert.match(result.error||'',/no safely detectable handoff type/i);
+});

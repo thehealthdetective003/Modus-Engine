@@ -74,6 +74,8 @@ RULES:
 - Keep engineering systems, operational states, relationships, concept bridges, and evidence claims distinct.
 - Provide at least four meaningful engineering systems with stable unique IDs.
 - Never promote a general principle or external observation into a confirmed product-specific internal implementation.
+- UNKNOWN claims must use EXCLUDE / NOT_ALLOWED and their IDs must never be referenced by visual objects.
+- Write every must_show item as a short literal frame primitive, count, visible property, or physical action; keep interpretation in narrative_purpose and semantic_alignment_terms.
 - Respect wording_permission, visualization_permission, generation_permission, media routes, and context truth status.
 - Route readable maps, timelines, dimensions, labels, formulas, interfaces, and precise data to EDITOR_NATIVE_GRAPHIC.
 - Return only schema-valid JSON version 3.0.0.
@@ -177,8 +179,6 @@ export function normalizeEngineeringHandoff(input:VisualEngineeringHandoffV3):To
     visual_exclusions:exclusions.join(', '),
     negative_prompt_global:[...new Set(exclusions)],
     environments,
-    lifecycle_stages:[],
-    lifecycle_stage_count:0,
     scene_continuity_rules:{lifecycle_progression:'Follow the approved engineering chapter architecture; concept bridges never imply physical transformation.',state_consistency:'Preserve one stable operational configuration per clip.',environment_logic:'Use only the selected V3 environment and its truth status.',markings_consistency:'Preserve exact markings only with reference support.',scale_consistency:dims.human_scale_reference||'Keep product scale and proportions stable.',no_stage_skipping:true},
     quality_control:{source_schema:input.schema,evidence_boundaries:input.evidence_boundaries,engineering_systems:input.engineering_systems,operational_states:input.operational_states,system_relationships:input.system_relationships,concept_bridges:input.concept_bridges,global_prompt_rules:input.global_prompt_rules},
     _production_handoff:input,
