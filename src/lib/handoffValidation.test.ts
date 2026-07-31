@@ -144,6 +144,29 @@ test('V3 evidence and routing rules block unsupported exact and forbidden genera
   assert.ok(validateVisualProductionHandoff(cutaway).errors.some(error=>error.message.includes('internal cutaway')));
 });
 
+test('V3 accepts partially covered assets that independently verify an exact event or location',()=>{
+  const value:any=clone(makeValidEngineeringHandoff());
+  const asset=value.reference_assets[0],beat=value.visual_story_plan.chapters[0].visual_beats[0];
+  asset.visual_verification='PARTIAL';asset.context_truth_status='EXACT_LOCATION_VERIFIED';asset.exact_event_or_location_verified=true;
+  beat.context_truth_status='EXACT_LOCATION_VERIFIED';beat.exact_event_or_location_claim_allowed=true;
+  beat.generation_permission='REFERENCE_REQUIRED';beat.preferred_media_routes=['REFERENCE_LOCKED_GRAPHIC'];
+  const result=validateVisualProductionHandoff(value);
+  assert.equal(result.errors.some(error=>error.message.includes('Exact event/location')),false);
+  asset.visual_verification='FAIL';
+  assert.equal(validateVisualProductionHandoff(value).errors.some(error=>error.message.includes('Exact event/location')),true);
+});
+
+test('V3 readable-graphic routing distinguishes qualitative label-free visuals from readable data',()=>{
+  const qualitative:any=clone(makeValidEngineeringHandoff());
+  const beat=qualitative.visual_story_plan.chapters[0].visual_beats[0];
+  beat.narrative_purpose='Contrast narrow overlap with wider separation while keeping the result qualitative and label-free.';
+  beat.semantic_alignment_terms=['predict-correct cycle','measurement update'];
+  beat.must_show=['one grey hull block advances','one dashed blue path lengthens','one cyan pulse reaches block'];
+  assert.equal(validateVisualProductionHandoff(qualitative).errors.some(error=>error.message.includes('Readable maps')),false);
+  beat.narrative_purpose='Present the reported 96.23-percent result with editor-controlled readable data.';
+  assert.equal(validateVisualProductionHandoff(qualitative).errors.some(error=>error.message.includes('Readable maps')),true);
+});
+
 test('V3 requires four systems and meaningful beat alignment',()=>{
   const value:any=clone(makeValidEngineeringHandoff());
   value.engineering_systems=value.engineering_systems.slice(0,3);
@@ -183,7 +206,7 @@ test('Engineering V3 remains closed and rejects manufacturing lifecycle fields',
 });
 
 test('must_show review accepts concrete plural primitives and reports exact abstract values',()=>{
-  for(const value of ['two grey hull blocks','four vertical steel posts','one blue waterline becomes level','three white wake lines converge behind the stern','two technicians']){
+  for(const value of ['two grey hull blocks','four vertical steel posts','one blue waterline becomes level','three white wake lines converge behind the stern','two technicians','small ripples move outward','one distant shoreline remains still','one grey spindle body','four cyan streamlines remain attached','two round thruster openings','one lifting sling hangs slack','suspended particles drift slowly','one blue wedge widens','one vertical blue bracket','one dark water column']){
     assert.equal(reviewMustShowEntry(value,'/must_show/0'),null,value);
   }
   for(const [index,value] of ['operational capability','proof of maturity','mission success','system reliability'].entries()){

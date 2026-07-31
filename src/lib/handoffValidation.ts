@@ -125,12 +125,17 @@ export function validateV2Semantics(data:VisualProductionHandoffV2):HandoffValid
 }
 
 const exactRoutes=new Set<V3MediaRoute>(['REFERENCE_IMAGE_I2V','AUTHENTIC_VIDEO','REFERENCE_LOCKED_GRAPHIC','STATIC_IMAGE_WITH_MOTION']);
-const readableGraphic=/\b(map|timeline|dimension|label|number|table|formula|interface|precise data|measurement)\b/i;
+function requiresEditorReadableGraphic(beat:V3VisualBeat):boolean{
+  const value=`${beat.narrative_purpose} ${beat.semantic_alignment_terms.join(' ')} ${beat.must_show.join(' ')}`
+    .toLowerCase()
+    .replace(/\b(?:label[- ]free|unlabelled|unlabeled|text[- ]free|without readable (?:text|labels?|numbers?|data)|no readable (?:text|labels?|numbers?|data))\b/g,' ');
+  return /\b(?:editor[- ]controlled|readable (?:text|labels?|numbers?|data|maps?|timelines?|dimensions?|formulas?|interfaces?|tables?)|precise data|numeric(?:al)? (?:labels?|scale|values?|comparison)|textual evidence|labelled|labeled|timeline|formula|data table|user interface|screen interface|map with readable|reported\s+\d+(?:\.\d+)?|present(?:s|ing)?\s+the\s+reported)\b/i.test(value);
+}
 const concreteTokens=new Set([
-  'aircraft','airframe','arrow','beam','block','boat','bubble','cable','camera','circle','cloud','component','console','control','cradle','deck','deckhouse','door','edge','engine','exhaust','fin','flap','frame','gear','hand','hatch','helicopter','hull','intake','line','mast','nose','operator','outrigger','pallet','panel','particle','post','rectangle','rotor','rudder','sensor','shadow','ship','silhouette','spray','stern','structure','surface','tail','tank','technician','track','vehicle','wake','waterline','wave','wheel','wing','wire',
+  'aircraft','airframe','arrow','band','beam','block','boat','body','bracket','bubble','cable','camera','ceiling','centerline','centreline','circle','cloud','column','component','cone','console','control','cradle','deck','deckhouse','door','dot','edge','engine','exhaust','field','fin','flap','frame','gear','hand','hatch','helicopter','hexagon','hull','intake','light','line','mast','nose','opening','operator','outrigger','pallet','panel','particle','path','plane','post','pulse','rectangle','ripple','rotor','rudder','sensor','shaft','shadow','ship','shoreline','silhouette','sling','spindle','spray','stern','streamline','structure','surface','tail','tank','technician','thruster','track','vehicle','wake','waterline','wave','wedge','wheel','wing','wire',
 ]);
-const visiblePropertyTokens=new Set(['black','blue','broad','brown','charcoal','curved','dark','dashed','flat','grey','gray','level','narrow','open','orange','pale','pointed','red','sealed','separated','symmetric','vertical','white','wide','yellow']);
-const visibleActionTokens=new Set(['advance','bend','change','converge','descend','fade','fall','flex','lengthen','lift','move','point','rise','rotate','separate','settle','stop','tilt','touch','turn','widen']);
+const visiblePropertyTokens=new Set(['attached','black','blue','broad','brown','charcoal','curved','dark','dashed','distant','empty','fixed','flat','grey','gray','level','narrow','open','orange','pale','pointed','red','sealed','separated','slack','smaller','still','symmetric','vertical','white','wide','yellow']);
+const visibleActionTokens=new Set(['advance','bend','change','converge','darken','descend','drift','expand','extend','fade','fall','flex','lengthen','lift','move','narrow','overlap','point','recede','rise','rotate','separate','settle','stop','tilt','touch','turn','widen']);
 const forbiddenMustShowTokens=new Set([
   'accuracy','accurate','authentic','autonomy','avoid','capability','compliance','constraint','correct','ensure','evaluation','evidence','generic','highlighted','identity','logic','maintain','maturity','milestone','mission','operational','precedent','preserve','proof','reference','reliability','resistance','route','safe','safety','should','show','source','status','subject','support','system','tradeoff','transfer','trial','uncertainty','verified',
 ]);
@@ -217,7 +222,7 @@ export function validateV3Semantics(data:VisualEngineeringHandoffV3):HandoffVali
     issues.push(...referenceIssues(bridge.to_system_id,`${base}/to_system_id`,systems,'engineering system'));
     if(bridge.from_system_id===bridge.to_system_id)issues.push(issue(base,'A concept bridge must connect two distinct systems.','semantic','error','Choose a different valid endpoint.'));
   });
-  const verifiedAssets=new Set(data.reference_assets.filter(asset=>asset.visual_verification==='PASS'&&asset.exact_event_or_location_verified&&['EXACT_EVENT_VERIFIED','EXACT_LOCATION_VERIFIED'].includes(asset.context_truth_status)).map(asset=>asset.asset_id));
+  const verifiedAssets=new Set(data.reference_assets.filter(asset=>asset.visual_verification!=='FAIL'&&asset.exact_event_or_location_verified&&['EXACT_EVENT_VERIFIED','EXACT_LOCATION_VERIFIED'].includes(asset.context_truth_status)).map(asset=>asset.asset_id));
   const productSpecificReference=new Set(data.reference_assets.filter(asset=>asset.visual_verification==='PASS'&&asset.exact_variant_or_configuration.trim()&&asset.visible_geometry_features.length).map(asset=>asset.asset_id));
   chapters.forEach((chapter,chapterIndex)=>{
     const base=`/visual_story_plan/chapters/${chapterIndex}`;
@@ -261,7 +266,7 @@ export function validateV3Semantics(data:VisualEngineeringHandoffV3):HandoffVali
         const properRoute=beat.preferred_media_routes.some(route=>exactRoutes.has(route));
         if(!exactTruth||!verified||!properRoute)issues.push(issue(beatBase,'Exact event/location claims require exact truth status, a verified supporting asset, and an authentic or reference-locked route.','evidence','error','Use a contextual non-identifying alternative or supply verified reference evidence.'));
       }
-      const requiresReadableGraphic=readableGraphic.test(`${beat.narrative_purpose} ${beat.semantic_alignment_terms.join(' ')} ${beat.must_show.join(' ')}`);
+      const requiresReadableGraphic=requiresEditorReadableGraphic(beat);
       if(requiresReadableGraphic&&(beat.generation_permission!=='EDITOR_ONLY'||beat.preferred_media_routes.length!==1||beat.preferred_media_routes[0]!=='EDITOR_NATIVE_GRAPHIC'))
         issues.push(issue(`${beatBase}/preferred_media_routes`,'Readable maps, timelines, labels, dimensions, formulas, interfaces, or precise data require EDITOR_NATIVE_GRAPHIC with EDITOR_ONLY permission.','routing','error','Use preferred_media_routes ["EDITOR_NATIVE_GRAPHIC"] and generation_permission "EDITOR_ONLY".'));
     });
