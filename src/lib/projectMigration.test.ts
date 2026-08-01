@@ -63,6 +63,19 @@ test('preserves the complete V2 handoff through project JSON migration', () => {
   assert.deepEqual(result.state?.topic?._production_handoff?.visual_story_plan, template.visual_story_plan);
 });
 
+test('loads project handoffs with compatibility warnings and rejects blocking ambiguity',()=>{
+  const compatible:any=JSON.parse(JSON.stringify(template));compatible.extra_research_metadata={source_count:12};
+  const compatibleTopic=normalizeProductionHandoff(compatible);
+  const loaded=migrateProject(JSON.parse(JSON.stringify({...initial,topic:compatibleTopic,phase:1})),initial,10);
+  assert.deepEqual(loaded.state?.topic?._production_handoff,compatible);
+  assert.match(loaded.message||'',/compatibility warning/);
+
+  const ambiguous:any=JSON.parse(JSON.stringify(template));ambiguous.environments.push(JSON.parse(JSON.stringify(ambiguous.environments[0])));
+  const rejected=migrateProject({...initial,topic:normalizeProductionHandoff(ambiguous),phase:1},initial,10);
+  assert.equal(rejected.state,null);
+  assert.match(rejected.error||'',/Duplicate environment_id/);
+});
+
 test('resets quota-driven schema 7 and 8 plans so they are rebuilt from the VO',()=>{
   const graphicPlan={...plan,visual_family:'TECHNICAL_GRAPHIC',visual_treatment:'MOTION_GRAPHIC_T2V',product_visibility:'NONE',graphic_spec:undefined};
   const scene={...graphicPlan,number:1,start:0,end:8,duration:8,voiceover:'Radar signals sweep across the detection field',silent:false,state:'B',subject:'Radar signal relationship',product_visual_state:'Conceptual technical diagram',primary_action:'One signal sweep crosses the field',supporting_motion:'One colored zone reveals the response',environment_description:'Abstract technical space',camera:{shot_scale:'wide',lens:'orthographic',angle:'top-down',movement:'static',movement_speed:'none'},lighting_and_material:'Flat vector palette',continuity_from_previous:'Opening',transition_to_next:'Hold',required_visible_features:['concentric signal field'],forbidden_elements:['readable text'],temporal_action};

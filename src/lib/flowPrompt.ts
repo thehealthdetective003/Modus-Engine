@@ -58,13 +58,16 @@ export function buildFocusedProductionContext(topic: TopicBrief | null, directio
   const stageIds=new Set(directions.map(direction=>direction.stage_id).filter(Boolean));
   const environmentIds=new Set(directions.map(direction=>direction.environment_ref).filter(Boolean));
   const stages=(Array.isArray(handoff.production_stages)?handoff.production_stages:[]).filter((stage:any)=>stageIds.has(stage.stage_id));
-  stages.forEach((stage:any)=>{if(stage.environment_id)environmentIds.add(stage.environment_id);});
+  stages.forEach((stage:any)=>{
+    if(stage.environment_id)environmentIds.add(stage.environment_id);
+    if(Array.isArray(stage.environment_ids))stage.environment_ids.forEach((id:string)=>environmentIds.add(id));
+  });
   const moduleIds=new Set<string>();
   const referenceIds=new Set<string>();
   stages.forEach((stage:any)=>{
     if(stage.geometry_control?.primary_geometry_module_id)moduleIds.add(stage.geometry_control.primary_geometry_module_id);
-    (stage.geometry_control?.secondary_geometry_module_ids||[]).forEach((id:string)=>moduleIds.add(id));
-    (stage.visual_evidence?.reference_asset_ids||[]).forEach((id:string)=>referenceIds.add(id));
+    if(Array.isArray(stage.geometry_control?.secondary_geometry_module_ids))stage.geometry_control.secondary_geometry_module_ids.forEach((id:string)=>moduleIds.add(id));
+    if(Array.isArray(stage.visual_evidence?.reference_asset_ids))stage.visual_evidence.reference_asset_ids.forEach((id:string)=>referenceIds.add(id));
   });
   return {
     schema:handoff.schema,
@@ -72,10 +75,10 @@ export function buildFocusedProductionContext(topic: TopicBrief | null, directio
     dimensions_and_proportions:handoff.dimensions_and_proportions,
     global_prompt_rules:handoff.global_prompt_rules,
     production_stages:stages,
-    environments:(handoff.environments||[]).filter((environment:any)=>environmentIds.has(environment.environment_id)),
-    geometry_modules:(handoff.geometry_modules||[]).filter((module:any)=>moduleIds.has(module.module_id)),
-    reference_assets:(handoff.reference_assets||[]).filter((asset:any)=>referenceIds.has(asset.asset_id)),
-    stage_transitions:(handoff.stage_transitions||[]).filter((transition:any)=>stageIds.has(transition.from_stage_id)||stageIds.has(transition.to_stage_id)),
+    environments:(Array.isArray(handoff.environments)?handoff.environments:[]).filter((environment:any)=>environmentIds.has(environment.environment_id)),
+    geometry_modules:(Array.isArray(handoff.geometry_modules)?handoff.geometry_modules:[]).filter((module:any)=>moduleIds.has(module.module_id)),
+    reference_assets:(Array.isArray(handoff.reference_assets)?handoff.reference_assets:[]).filter((asset:any)=>referenceIds.has(asset.asset_id)),
+    stage_transitions:(Array.isArray(handoff.stage_transitions)?handoff.stage_transitions:[]).filter((transition:any)=>stageIds.has(transition.from_stage_id)||stageIds.has(transition.to_stage_id)),
   };
 }
 

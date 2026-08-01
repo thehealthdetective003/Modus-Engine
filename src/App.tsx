@@ -94,7 +94,7 @@ export default function App() {
           setState(migration.state);
           setLastSavedState(JSON.stringify(migration.state));
         } else {
-          toast.error('The auto-saved project uses an unsupported production format. Only Standard Lifecycle is available.');
+          toast.error(migration.error||'The auto-saved project could not be restored.');
         }
       } catch (e) {
         console.error('Failed to parse assembly_line_save', e);
@@ -176,7 +176,7 @@ export default function App() {
       const migration = migrateProject(loaded, INITIAL_STATE, duration);
       const merged = migration.state;
       if (!merged) {
-        toast.error('This project uses an unsupported production format. Only Standard Lifecycle projects can be loaded.');
+        toast.error(migration.error||'This project could not be loaded.');
         setPendingAction(null);
         return;
       }
@@ -328,7 +328,7 @@ export default function App() {
                           const migration = migrateProject(importedData, INITIAL_STATE, duration);
                           const merged = migration.state;
                           if (!merged) {
-                            toast.error('Unsupported production format. Only Standard Lifecycle projects can be loaded.');
+                            toast.error(migration.error||'Project file could not be loaded.');
                             return;
                           }
                           setState(merged);

@@ -2,6 +2,7 @@ import { AppState, T2VPrompt } from '../types';
 import { resplitTranscription } from './timedTranscript';
 import { ensureRequiredVisibleFeatures, validateSceneDirections } from './sceneDirections';
 import { deriveGraphicSceneSpec, resolvePlannedState } from './scenePlanner';
+import { validateVisualProductionHandoff } from './handoffValidation';
 
 export type MigrationResult = { state: AppState | null; message?: string; error?: string };
 
@@ -14,6 +15,11 @@ export function migrateProject(raw: any, initial: AppState, sceneDuration: 8 | 1
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { state: null, error: 'Invalid project file.' };
   if (raw.projectFormat && raw.projectFormat !== 'standard-lifecycle') return { state: null, error: 'Unsupported production format.' };
   if (raw.creationMode && raw.creationMode !== 'standard-pacing') return { state: null, error: 'Rapid and Hybrid projects are no longer supported.' };
+  const handoffValidation=raw.topic?validateVisualProductionHandoff(raw.topic):null;
+  if(handoffValidation&&!handoffValidation.valid){
+    const first=handoffValidation.errors[0];
+    return {state:null,error:`Invalid production handoff${first?` at ${first.path}: ${first.message}`:''}`};
+  }
 
   sceneDuration = projectSceneDuration(raw, sceneDuration);
   let transcription = raw.voiceoverTranscription || null;
@@ -92,7 +98,9 @@ export function migrateProject(raw: any, initial: AppState, sceneDuration: 8 | 1
   };
   const reset = timingChanged || imageMode || !profileSupported || !directionsValid || !preserveOutput;
   const planningUpgrade = raw.projectSchemaVersion < 9 && rawPlan.length > 0;
-  return { state, message: planningUpgrade
+  const migrationMessage=planningUpgrade
     ? 'Project content and transcript were preserved. Rebuild Phase 2 directions with the new VO-synchronized documentary planner.'
-    : reset && raw.topic ? 'Project migrated to the timestamped T2V pipeline; incompatible downstream output was reset.' : undefined };
+    : reset && raw.topic ? 'Project migrated to the timestamped T2V pipeline; incompatible downstream output was reset.' : undefined;
+  const warningMessage=handoffValidation?.warnings.length?`Loaded with ${handoffValidation.warnings.length} production-handoff compatibility warning${handoffValidation.warnings.length===1?'':'s'}.`:undefined;
+  return { state, message: [migrationMessage,warningMessage].filter(Boolean).join(' ')||undefined };
 }

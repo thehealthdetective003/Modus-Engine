@@ -14,23 +14,46 @@ test('bundled V2 template validates with two environments and one stage', () => 
   assert.equal(template.production_stages.length, 1);
 });
 
-test('V2 schema reports missing, enum, additional-property, ID, and version errors', () => {
+test('recoverable V2 schema differences warn without blocking import', () => {
   const missing: any = clone(template); delete missing.visual_story_plan;
-  assert.ok(validateVisualProductionHandoff(missing).schemaErrors.some(error => error.path === '/visual_story_plan'));
+  const missingResult=validateVisualProductionHandoff(missing);
+  assert.equal(missingResult.valid,true);
+  assert.ok(missingResult.warnings.some(error => error.path === '/visual_story_plan'));
 
   const invalidEnum: any = clone(template); invalidEnum.production_stages[0].product_state_code = 'D';
-  assert.ok(validateVisualProductionHandoff(invalidEnum).schemaErrors.some(error => error.path.includes('product_state_code')));
+  const invalidEnumResult=validateVisualProductionHandoff(invalidEnum);
+  assert.equal(invalidEnumResult.valid,true);
+  assert.ok(invalidEnumResult.warnings.some(error => error.path.includes('product_state_code')));
 
   const additional: any = clone(template); additional.unexpected = true;
-  assert.ok(validateVisualProductionHandoff(additional).schemaErrors.some(error => error.message.includes('additional')));
+  const additionalResult=validateVisualProductionHandoff(additional);
+  assert.equal(additionalResult.valid,true);
+  assert.ok(additionalResult.warnings.some(error => error.path==='/unexpected'));
 
-  const malformed: any = clone(template); malformed.production_stages[0].stage_id = 'bad id';
-  assert.ok(validateVisualProductionHandoff(malformed).schemaErrors.some(error => error.path.includes('stage_id')));
+  const malformed: any = clone(template); malformed.production_stages[0].stage_id = 'bad id';malformed.visual_story_plan.chapters[0].applicable_production_stage_ids=['bad id'];
+  const malformedResult=validateVisualProductionHandoff(malformed);
+  assert.equal(malformedResult.valid,true);
+  assert.ok(malformedResult.warnings.some(error => error.path.includes('stage_id')));
+
+  const compatible: any=clone(template);compatible.schema.version='2.4.0';compatible.product.official_name='Future product';
+  const compatibleResult=validateVisualProductionHandoff(compatible);
+  assert.equal(compatibleResult.valid,true);
+  assert.equal(compatibleResult.format,'v2');
+  assert.ok(compatibleResult.warnings.some(error=>error.path==='/schema/version'));
 
   const unsupported: any = clone(template); unsupported.schema.version = '3.0.0';
   const unsupportedResult = validateVisualProductionHandoff(unsupported);
   assert.equal(unsupportedResult.valid, false);
   assert.equal(unsupportedResult.format, 'unsupported');
+});
+
+test('missing core data remains blocking',()=>{
+  const product:any=clone(template);delete product.product;
+  assert.equal(validateVisualProductionHandoff(product).valid,false);
+  const stages:any=clone(template);stages.production_stages=[];
+  assert.equal(validateVisualProductionHandoff(stages).valid,false);
+  const environments:any=clone(template);environments.environments={};
+  assert.equal(validateVisualProductionHandoff(environments).valid,false);
 });
 
 test('V2 semantic validation detects every duplicate ID family', () => {
@@ -69,9 +92,20 @@ test('V2 semantic validation reports all cross-reference categories with readabl
   beat.reference_asset_ids = ['REF_BEAT_MISSING'];
   const result = validateVisualProductionHandoff(value);
   assert.equal(result.schemaErrors.length, 0);
-  for (const id of ['ENV_MISSING', 'MOD_MISSING', 'MOD_SECONDARY_MISSING', 'REF_MISSING', 'STG_FROM_MISSING', 'STG_TO_MISSING', 'STG_CHAPTER_MISSING', 'STG_BEAT_MISSING', 'ENV_BEAT_MISSING', 'REF_BEAT_MISSING']) {
+  assert.equal(result.valid,false);
+  for (const id of ['ENV_MISSING', 'MOD_MISSING', 'MOD_SECONDARY_MISSING', 'STG_FROM_MISSING', 'STG_TO_MISSING', 'STG_CHAPTER_MISSING', 'STG_BEAT_MISSING', 'ENV_BEAT_MISSING']) {
     assert.ok(result.semanticErrors.some(error => error.message.includes(`"${id}"`) && error.path.startsWith('/')), `missing broken reference ${id}`);
   }
+  for(const id of ['REF_MISSING','REF_BEAT_MISSING'])assert.ok(result.warnings.some(error=>error.message.includes(`"${id}"`)&&error.code==='asset-reference'));
+});
+
+test('unavailable reference assets warn while generated T2V remains importable',()=>{
+  const value:any=clone(template);value.product.official_name='Example product';
+  value.production_stages[0].visual_evidence.reference_asset_ids=['REF_UNAVAILABLE'];
+  value.visual_story_plan.chapters[0].visual_beats[0].reference_asset_ids=['REF_BEAT_UNAVAILABLE'];
+  const result=validateVisualProductionHandoff(value);
+  assert.equal(result.valid,true);
+  assert.ok(result.warnings.filter(error=>error.code==='asset-reference').length===2);
 });
 
 test('legacy V1 and adaptive briefs remain accepted', () => {

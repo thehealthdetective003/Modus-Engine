@@ -185,7 +185,7 @@ export function SettingsPanel({ state, setState, open, onOpenChange }: SettingsP
                       ? `Imported ${new Date(settings.productionTemplateImportedAt).toLocaleString()}`
                       : 'Bundled Modus Visual Production Handoff v2.0.0'}
                   </p>
-                  <p className={`text-[10px] mt-1 font-bold ${productionTemplateStatus.valid ? 'text-green-500' : 'text-destructive'}`}>
+                  <p className={`text-[10px] mt-1 font-bold ${productionTemplateStatus.valid ? productionTemplateStatus.warnings.length?'text-amber-500':'text-green-500' : 'text-destructive'}`}>
                     {productionTemplateStatus.status}{productionTemplateStatus.version ? ` · ${productionTemplateStatus.version}` : ''}
                   </p>
                 </div>
@@ -221,7 +221,7 @@ export function SettingsPanel({ state, setState, open, onOpenChange }: SettingsP
                             productionTemplateName: parsed.schema?.name || file.name,
                             productionTemplateImportedAt: new Date().toISOString(),
                           }));
-                          toast.success(`${result.status} template imported and activated.`);
+                          toast.success(`${result.status} template imported and activated${result.warnings.length?` with ${result.warnings.length} compatibility warning${result.warnings.length===1?'':'s'}`:''}.`);
                         } catch {
                           setTemplateImportResult(validateVisualProductionHandoff(null));
                           toast.error('The selected file is not valid JSON.');
@@ -246,14 +246,25 @@ export function SettingsPanel({ state, setState, open, onOpenChange }: SettingsP
                   <RotateCcw className="h-3.5 w-3.5 mr-2" /> RESTORE
                 </Button>
               </div>
-              {templateImportResult && !templateImportResult.valid && (
-                <div className="rounded border border-destructive/30 bg-destructive/10 p-3 text-[10px] text-destructive normal-case">
-                  <p className="font-bold uppercase tracking-wider">Invalid</p>
-                  <ul className="mt-2 list-disc space-y-1 pl-4">
-                    {templateImportResult.errors.map((item, index) => (
-                      <li key={`${item.path}-${item.code}-${index}`}><span className="font-bold">{item.path}</span>: {item.message}</li>
-                    ))}
-                  </ul>
+              {templateImportResult && (!templateImportResult.valid || templateImportResult.warnings.length > 0) && (
+                <div className={`rounded border p-3 text-[10px] normal-case ${templateImportResult.valid?'border-amber-500/30 bg-amber-500/10 text-amber-500':'border-destructive/30 bg-destructive/10 text-destructive'}`}>
+                  <p className="font-bold uppercase tracking-wider">{templateImportResult.status}</p>
+                  {templateImportResult.valid ? (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer font-bold">{templateImportResult.warnings.length} compatibility warning{templateImportResult.warnings.length===1?'':'s'}</summary>
+                      <ul className="mt-2 max-h-40 list-disc space-y-1 overflow-auto pl-4">
+                        {templateImportResult.warnings.map((item, index) => (
+                          <li key={`${item.path}-${item.code}-${index}`}><span className="font-bold">{item.path}</span>: {item.message}</li>
+                        ))}
+                      </ul>
+                    </details>
+                  ) : (
+                    <ul className="mt-2 max-h-40 list-disc space-y-1 overflow-auto pl-4">
+                      {templateImportResult.errors.map((item, index) => (
+                        <li key={`${item.path}-${item.code}-${index}`}><span className="font-bold">{item.path}</span>: {item.message}</li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               )}
             </div>

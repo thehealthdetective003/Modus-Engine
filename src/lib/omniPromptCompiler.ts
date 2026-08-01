@@ -74,10 +74,12 @@ export function resolveProductionScene(topic: TopicBrief | null, direction: Scen
   const environments=Array.isArray(handoff.environments)?handoff.environments:[];
   const environment=environments.find((item:any)=>item.environment_id===direction.environment_ref) || {};
   const modules=Array.isArray(handoff.geometry_modules)?handoff.geometry_modules:[];
-  const moduleIds=[stage.geometry_control?.primary_geometry_module_id,...(stage.geometry_control?.secondary_geometry_module_ids||[])].filter(Boolean);
+  const secondaryModuleIds=Array.isArray(stage.geometry_control?.secondary_geometry_module_ids)?stage.geometry_control.secondary_geometry_module_ids:[];
+  const moduleIds=[stage.geometry_control?.primary_geometry_module_id,...secondaryModuleIds].filter(Boolean);
   const geometryModules=modules.filter((item:any)=>moduleIds.includes(item.module_id));
-  const references=(handoff.reference_assets||[]).filter((item:any)=>(stage.visual_evidence?.reference_asset_ids||[]).includes(item.asset_id));
-  const transition=(handoff.stage_transitions||[]).find((item:any)=>item.from_stage_id===direction.stage_id)||{};
+  const stageReferenceIds=Array.isArray(stage.visual_evidence?.reference_asset_ids)?stage.visual_evidence.reference_asset_ids:[];
+  const references=(Array.isArray(handoff.reference_assets)?handoff.reference_assets:[]).filter((item:any)=>stageReferenceIds.includes(item.asset_id));
+  const transition=(Array.isArray(handoff.stage_transitions)?handoff.stage_transitions:[]).find((item:any)=>item.from_stage_id===direction.stage_id)||{};
   const guidance=stage.camera_guidance||{};
   const stageViews=strings(guidance.preferred_views).map(normalizedCameraValue);
   const stageScales=strings(guidance.safe_shot_scales).map(value=>mapped(normalizedCameraValue(value),scaleMap)).filter(Boolean) as string[];
@@ -124,7 +126,7 @@ export function resolveProductionScene(topic: TopicBrief | null, direction: Scen
     present:uniqueStrings([stage.present_now,direction.required_visible_features]),
     absent:uniqueStrings([stage.not_yet_installed,direction.forbidden_elements]),
     exposed:uniqueStrings([stage.temporarily_exposed,stage.open_interfaces,stage.unfinished_edges_or_sections]),
-    forbidden:uniqueStrings([stage.geometry_control?.negative_constraints,stage.geometry_control?.forbidden_transformations,stage.stage_actions?.flatMap((a:any)=>a.forbidden_actions||[]),environment.forbidden_elements,direction.forbidden_elements]),
+    forbidden:uniqueStrings([stage.geometry_control?.negative_constraints,stage.geometry_control?.forbidden_transformations,Array.isArray(stage.stage_actions)?stage.stage_actions.flatMap((a:any)=>Array.isArray(a?.forbidden_actions)?a.forbidden_actions:[]):[],environment.forbidden_elements,direction.forbidden_elements]),
     confirmed:uniqueStrings([stage.visual_evidence?.confirmed_visual_details]), inferred:uniqueStrings([stage.visual_evidence?.analyst_inferred_visual_details]),
     camera:{ shotScale, lens, viewpoint, behavior, speed, movementCount:directionMovements.length, contradictions },
   };

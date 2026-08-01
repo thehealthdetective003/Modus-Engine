@@ -24,7 +24,8 @@ interface Phase1TopicProps {
 }
 export function Phase1Topic({ state, setState }: Phase1TopicProps) {
   const { settings } = useSettings();
-  const activeProductionTemplate = settings.productionTemplate || DEFAULT_PRODUCTION_TEMPLATE;
+  const configuredProductionTemplate = settings.productionTemplate || DEFAULT_PRODUCTION_TEMPLATE;
+  const activeProductionTemplate = validateVisualProductionHandoff(configuredProductionTemplate).valid ? configuredProductionTemplate : DEFAULT_PRODUCTION_TEMPLATE;
   const standardBlankTemplate = JSON.stringify(activeProductionTemplate, null, 2);
   const [jsonInput, setJsonInput] = useState('');
   const [isHowToOpen, setIsHowToOpen] = useState(false);
@@ -90,7 +91,7 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
       setIsValid(false); setParsedBrief(null); setError(null); setWarnings([]);
       if (result.valid) toast.success(`${result.status} imported. Validate and load it to continue.`);
       else {
-        setError('Invalid production JSON. Fix the listed errors before loading it.');
+        setError('Invalid production JSON. Fix the blocking errors before loading it.');
         toast.error('Invalid production JSON. The current project was not changed.');
       }
     } catch {
@@ -113,7 +114,7 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
       const result = validateVisualProductionHandoff(parsed);
       setValidationResult(result);
       if (!result.valid) {
-        setError('Invalid production JSON. Fix the listed schema or reference errors before loading it.');
+        setError('Invalid production JSON. Fix the blocking core or reference errors before loading it.');
         return;
       }
       const normalized = isProductionHandoff(parsed) ? normalizeProductionHandoff(parsed) : normalizeTopicBrief(parsed);
@@ -236,7 +237,9 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
           <div className={cn(
             'rounded-md border p-3 font-mono text-xs',
             validationResult.valid
-              ? 'border-green-500/30 bg-green-500/10 text-green-400'
+              ? validationResult.warnings.length
+                ? 'border-amber-500/30 bg-amber-500/10 text-amber-400'
+                : 'border-green-500/30 bg-green-500/10 text-green-400'
               : 'border-destructive/30 bg-destructive/10 text-destructive'
           )}>
             <div className="font-bold uppercase tracking-wider">{validationResult.status}</div>
@@ -246,6 +249,16 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
                   <li key={`${item.path}-${item.code}-${index}`}><span className="font-bold">{item.path}</span>: {item.message}</li>
                 ))}
               </ul>
+            )}
+            {validationResult.valid && validationResult.warnings.length > 0 && (
+              <details className="mt-2">
+                <summary className="cursor-pointer font-bold">{validationResult.warnings.length} compatibility warning{validationResult.warnings.length===1?'':'s'} — file can still be loaded</summary>
+                <ul className="mt-2 max-h-48 list-disc space-y-1 overflow-auto pl-5 font-normal">
+                  {validationResult.warnings.map((item, index) => (
+                    <li key={`${item.path}-${item.code}-${index}`}><span className="font-bold">{item.path}</span>: {item.message}</li>
+                  ))}
+                </ul>
+              </details>
             )}
           </div>
         )}

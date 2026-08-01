@@ -57,44 +57,57 @@ export const LEGACY_PRODUCTION_TEMPLATE: Record<string, any> = {
 };
 export const DEFAULT_PRODUCTION_TEMPLATE: Record<string, any> = DEFAULT_V2_PRODUCTION_TEMPLATE;
 
-const strings = (value: any): string[] => Array.isArray(value) ? value.map(String).filter(Boolean) : value ? [String(value)] : [];
-const describe = (record: any, omit: string[] = []) => Object.entries(record || {})
-  .filter(([key, value]) => !omit.includes(key) && value !== '' && value !== null && (!Array.isArray(value) || value.length))
-  .map(([key, value]) => `${key.replace(/_/g, ' ')}: ${Array.isArray(value) ? value.join(', ') : String(value)}`).join('; ');
+const strings = (value: any): string[] => Array.isArray(value) ? value.filter(item=>typeof item==='string'||typeof item==='number').map(String).filter(Boolean) : (typeof value==='string'||typeof value==='number')&&String(value).trim() ? [String(value)] : [];
+const describe = (value: any, omit: string[] = []) => Object.entries(value&&typeof value==='object'&&!Array.isArray(value)?value:{})
+  .filter(([key, item]) => !omit.includes(key) && item !== '' && item !== null && (typeof item!=='object'||Array.isArray(item)) && (!Array.isArray(item) || strings(item).length))
+  .map(([key, item]) => `${key.replace(/_/g, ' ')}: ${Array.isArray(item) ? strings(item).join(', ') : String(item)}`).join('; ');
 
 export function validateProductionTemplate(data: any): string[] {
   return validateVisualProductionHandoff(data).errors.map(error=>`${error.path}: ${error.message}`);
 }
 
 export function productionTemplatePrompt(template: Record<string, any>): string {
-  return `You are a manufacturing research and visual-continuity specialist. Fill this Modus Assembly Visual Production Handoff JSON for [PRODUCT].\nRULES:\n- Preserve every key and its data type; do not add or remove fields.\n- Fill arrays with as many accurate entries as the product requires.\n- Keep confirmed evidence separate from analyst inference and uncertainty.\n- Give every environment, geometry module, reference asset, action, and stage a stable unique ID.\n- Keep stages chronological and use product_state_code A (raw), B (partial), or C (finished).\n- Describe only camera-visible geometry, materials, factory actions, continuity, and constraints.\n- Return only valid JSON.\n\n${JSON.stringify(template, null, 2)}`;
+  return `You are a manufacturing research and visual-continuity specialist. Fill this Modus Assembly Visual Production Handoff JSON for [PRODUCT].\nRULES:\n- Preserve every core key and its data type. You may add useful evidence metadata, but never rename or remove core IDs or reference fields.\n- Fill arrays with as many accurate entries as the product requires.\n- Keep confirmed evidence separate from analyst inference and uncertainty.\n- Give every environment, geometry module, reference asset, action, and stage a stable unique ID.\n- Keep every stage, chapter, beat, environment, geometry, transition, and asset reference resolvable.\n- Keep stages chronological and use product_state_code A (raw), B (partial), or C (finished).\n- Describe only camera-visible geometry, materials, factory actions, continuity, and constraints.\n- Return only valid JSON.\n\n${JSON.stringify(template, null, 2)}`;
 }
 
 export function normalizeProductionHandoff(input: any): TopicBrief {
   const p = input.product || {};
   const dims = input.dimensions_and_proportions || {};
-  const modules = Array.isArray(input.geometry_modules) ? input.geometry_modules : [];
-  const productName = [p.official_name, p.exact_variant].filter(Boolean).join(' ') || 'Untitled product';
+  const modules = Array.isArray(input.geometry_modules) ? input.geometry_modules.filter((item:any)=>item&&typeof item==='object') : [];
+  const officialName=String(p.official_name||'').trim(),exactVariant=String(p.exact_variant||'').trim();
+  const productName = exactVariant&&officialName&&!exactVariant.toLowerCase().includes(officialName.toLowerCase())
+    ?`${officialName} ${exactVariant}`
+    :exactVariant||officialName||'Untitled product';
   const dimensionText = describe(dims);
   const moduleText = modules.map((m: any) => [m.module_name || m.module_id, ...strings(m.required_visible_features)].filter(Boolean).join(': ')).filter(Boolean);
   const visualLock = [p.overall_visual_description, ...strings(p.immutable_identity_features), dimensionText, ...moduleText].filter(Boolean).join(' | ');
   const exclusions = [...strings(p.visually_similar_products_to_avoid), ...strings(p.global_negative_constraints), ...modules.flatMap((m: any) => strings(m.likely_wrong_substitutions)), ...modules.flatMap((m: any) => strings(m.forbidden_geometry_changes))];
-  const environments = (input.environments || []).map((env: any, index: number) => ({
-    environment_id: env.environment_id || `E${String(index + 1).padStart(2, '0')}`,
-    name: env.environment_name || env.environment_id || `Environment ${index + 1}`,
-    environment_type: env.setting_scope || env.facility_type,
+  const sourceEnvironments=Array.isArray(input.environments)?input.environments.filter((item:any)=>item&&typeof item==='object'):[];
+  const runtimeEnvironments=sourceEnvironments.length?sourceEnvironments:[{
+    environment_id:'ENV_DERIVED',environment_name:'Generic industrial production environment',facility_type:'industrial facility',
+    lighting:'neutral documentary factory lighting',forbidden_elements:['invented branding','unsupported proprietary details'],
+  }];
+  const environments = runtimeEnvironments.map((env: any, index: number) => ({
+    environment_id: String(env.environment_id || `E${String(index + 1).padStart(2, '0')}`),
+    name: String(env.environment_name || env.environment_id || `Environment ${index + 1}`),
+    environment_type: String(env.setting_scope || env.facility_type || ''),
     visual_details: describe(env, ['environment_id', 'environment_name', 'forbidden_elements']),
     confirmed_visuals: describe(env, ['environment_id', 'environment_name', 'forbidden_elements']),
     do_not_show: strings(env.forbidden_elements),
     _production_environment: env,
   }));
-  const stages = (input.production_stages || []).map((stage: any, index: number) => {
-    const actions = (stage.stage_actions || []).flatMap((a: any) => strings(a.action_description || a.primary_action));
-    const state = ['A', 'B', 'C'].includes(stage.product_state_code) ? stage.product_state_code : (stage.product_state?.recognizable_as_final_product ? 'C' : 'B');
+  const environmentIds=new Set(environments.map((item:any)=>item.environment_id));
+  const sourceStages=Array.isArray(input.production_stages)?input.production_stages.filter((item:any)=>item&&typeof item==='object'):[];
+  const stages = sourceStages.map((stage: any, index: number) => {
+    const actions = (Array.isArray(stage.stage_actions)?stage.stage_actions:[]).flatMap((a: any) => strings(a?.action_description || a?.primary_action));
+    const rawState=String(stage.product_state_code||'').toUpperCase().replace(/^STATE[_\s-]*/, '');
+    const state = ['A', 'B', 'C'].includes(rawState) ? rawState : stage.product_state?.recognizable_as_final_product ? 'C' : strings(stage.present_now).length ? 'B' : 'A';
+    const requestedEnvironments=strings(stage.environment_ids??stage.environment_id);
+    const environmentRef=requestedEnvironments.find(id=>environmentIds.has(id))||environments[0]?.environment_id||'ENV_DERIVED';
     return {
-      stage_id: stage.stage_id || `S${String(index + 1).padStart(2, '0')}`,
-      stage_name: stage.stage_name || `Production stage ${index + 1}`,
-      environment_ref: stage.environment_ids?.[0] || stage.environment_id || '',
+      stage_id: String(stage.stage_id || `S${String(index + 1).padStart(2, '0')}`),
+      stage_name: String(stage.stage_name || `Production stage ${index + 1}`),
+      environment_ref: environmentRef,
       stage_function: stage.production_function || stage.stage_visual_summary,
       action: actions.join(' ') || stage.stage_visual_summary || '',
       product_visual_state: describe(stage.product_state),
@@ -129,5 +142,5 @@ export function normalizeProductionHandoff(input: any): TopicBrief {
 }
 
 export function isProductionHandoff(data: any): boolean {
-  return !!data?.schema?.name && Array.isArray(data?.production_stages) && !!data?.product;
+  return /^2\.\d+\.\d+$/.test(String(data?.schema?.version||'')) || (!!data?.schema?.name && Array.isArray(data?.production_stages) && !!data?.product);
 }

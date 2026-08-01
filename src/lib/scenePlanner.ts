@@ -11,12 +11,19 @@ interface Candidate {
 const CONTEXT = new Set<VisualFamily>(['FACTORY_AERIAL','FACTORY_EXTERIOR','FACILITY_APPROACH','FACTORY_INTERIOR_WIDE','MAP_OR_SUPPLY_CHAIN']);
 const GRAPHIC = new Set<VisualFamily>(['TECHNICAL_GRAPHIC','MAP_OR_SUPPLY_CHAIN']);
 const OPERATIONAL = new Set<VisualFamily>(['OPERATIONAL_CONTEXT','DYNAMIC_TESTING','DELIVERY_AND_ROLLOUT']);
+const VISUAL_FAMILIES=new Set<VisualFamily>(['FACTORY_AERIAL','FACTORY_EXTERIOR','FACILITY_APPROACH','FACTORY_INTERIOR_WIDE','MATERIAL_FLOW','COMPONENT_LOGISTICS','ASSEMBLY_PROCESS','COMPONENT_MACRO','TOOL_LEVEL_DETAIL','WORKER_POV','MACHINERY_ACTION','QUALITY_CONTROL','MEASUREMENT_AND_CALIBRATION','ENVIRONMENTAL_TESTING','STATIC_GROUND_TEST','DYNAMIC_TESTING','DELIVERY_AND_ROLLOUT','OPERATIONAL_CONTEXT','TECHNICAL_GRAPHIC','MAP_OR_SUPPLY_CHAIN','ARCHIVAL_REFERENCE','HERO_PRODUCT','CHAPTER_TRANSITION','ATMOSPHERIC_INTERSTITIAL']);
+const STORY_FUNCTIONS=new Set<StoryFunction>(['OPENING_HOOK','ESTABLISH_SCALE','ESTABLISH_LOCATION','INTRODUCE_COMPONENT','EXPLAIN_PROCESS','SHOW_MATERIAL_FLOW','SHOW_HUMAN_SCALE','SHOW_PRECISION','EXPLAIN_HIDDEN_SYSTEM','BRIDGE_STAGE','RESET_ATTENTION','PREVIEW_PAYOFF','DELIVER_PAYOFF','PROVIDE_CONTEXT','COMPARE_SYSTEMS','CONCLUDE_CHAPTER']);
+const PRODUCT_VISIBILITIES=new Set<ProductVisibility>(['NONE','PARTIAL','FULL','DETAIL_ONLY']);
+const list=(value:unknown):string[]=>Array.isArray(value)?value.map(String).filter(Boolean):value?[String(value)]:[];
 const STOP_WORDS=new Set(['the','and','that','this','with','from','into','while','through','about','then','than','only','also','must','still','each','when','where','which','their','there','have','has','had','does','not','without','show','scene','visual','product','aircraft','factory','system','stage','complete','completed','structure','production']);
 const stem=(value:string)=>value.length>5?value.replace(/(?:ing|tion|ions|ments|ment|ed|es|s)$/,''):value;
 const tokenize = (value: string) => new Set((value.toLowerCase().match(/[a-z0-9]{3,}/g) || []).map(stem).filter(value=>!STOP_WORDS.has(value)));
 const overlap = (a: Set<string>, b: Set<string>) => [...a].filter(x => b.has(x)).length;
 const isV2 = (topic: TopicBrief): topic is TopicBrief & { _production_handoff: VisualProductionHandoffV2 } =>
-  (topic._production_handoff as any)?.schema?.version === '2.0.0';
+  /^2\.\d+\.\d+$/.test(String((topic._production_handoff as any)?.schema?.version||''));
+
+const hasUsableV2StoryPlan=(handoff:any):boolean=>Array.isArray(handoff?.visual_story_plan?.chapters)
+  &&handoff.visual_story_plan.chapters.some((chapter:any)=>Array.isArray(chapter?.visual_beats)&&chapter.visual_beats.some((beat:any)=>beat&&typeof beat==='object'));
 
 export function resolvePlannedState(topic:TopicBrief|null|undefined,stageId:string,visibility:ProductVisibility):'A'|'B'|'C'{
   const rawStage=(topic as any)?._production_handoff?.production_stages?.find((item:any)=>item.stage_id===stageId);
@@ -77,7 +84,7 @@ function showdownRoleFor(scene:TimedScene,total:number,family:VisualFamily,opera
 
 function treatmentFor(beat: V2VisualBeat): VisualTreatment {
   if (!GRAPHIC.has(beat.visual_family)) return 'LIVE_ACTION_T2V';
-  const words = `${beat.beat_name} ${beat.narrative_purpose} ${beat.semantic_alignment_terms.join(' ')}`.toLowerCase();
+  const words = `${beat.beat_name} ${beat.narrative_purpose} ${list(beat.semantic_alignment_terms).join(' ')}`.toLowerCase();
   return /flow|path|sequence|motion|movement|relationship|layer|mechanism|supply|route/.test(words) ? 'MOTION_GRAPHIC_T2V' : 'STATIC_GRAPHIC_T2V';
 }
 
@@ -169,7 +176,27 @@ export function deriveGraphicSceneSpec(topic:TopicBrief|null|undefined,scene:Tim
 }
 
 function candidatesFromV2(handoff: VisualProductionHandoffV2): Candidate[] {
-  const all = handoff.visual_story_plan.chapters.flatMap(chapter => chapter.visual_beats.map(beat => ({ chapter, beat })));
+  const chapters=(Array.isArray(handoff.visual_story_plan?.chapters)?handoff.visual_story_plan.chapters:[]).filter((item:any)=>item&&typeof item==='object').map((raw:any,chapterIndex:number)=>{
+    const chapter:V2Chapter={...raw,
+      chapter_id:String(raw.chapter_id||`CHAPTER_${chapterIndex+1}`),chapter_name:String(raw.chapter_name||`Chapter ${chapterIndex+1}`),chapter_order:Number(raw.chapter_order)||chapterIndex+1,
+      narrative_goal:String(raw.narrative_goal||''),chapter_question:String(raw.chapter_question||''),chapter_payoff:String(raw.chapter_payoff||''),opening_rehook_intent:String(raw.opening_rehook_intent||''),
+      applicable_production_stage_ids:list(raw.applicable_production_stage_ids),required_visual_families:list(raw.required_visual_families).filter(value=>VISUAL_FAMILIES.has(value as VisualFamily)) as VisualFamily[],
+      optional_visual_families:list(raw.optional_visual_families).filter(value=>VISUAL_FAMILIES.has(value as VisualFamily)) as VisualFamily[],forbidden_visual_families:list(raw.forbidden_visual_families).filter(value=>VISUAL_FAMILIES.has(value as VisualFamily)) as VisualFamily[],visual_beats:[],
+    };
+    chapter.visual_beats=(Array.isArray(raw.visual_beats)?raw.visual_beats:[]).filter((item:any)=>item&&typeof item==='object').map((beat:any,beatIndex:number)=>({
+      ...beat,beat_id:String(beat.beat_id||`${chapter.chapter_id}_BEAT_${beatIndex+1}`),beat_order:Number(beat.beat_order)||beatIndex+1,beat_name:String(beat.beat_name||`Visual beat ${beatIndex+1}`),
+      story_function:(STORY_FUNCTIONS.has(beat.story_function)?beat.story_function:'EXPLAIN_PROCESS') as StoryFunction,
+      visual_family:(VISUAL_FAMILIES.has(beat.visual_family)?beat.visual_family:'ASSEMBLY_PROCESS') as VisualFamily,
+      narrative_purpose:String(beat.narrative_purpose||beat.beat_name||'Show narration-matched physical production activity'),semantic_alignment_terms:list(beat.semantic_alignment_terms),
+      applicable_stage_ids:list(beat.applicable_stage_ids),environment_ids:list(beat.environment_ids),product_visibility:(PRODUCT_VISIBILITIES.has(beat.product_visibility)?beat.product_visibility:'PARTIAL') as ProductVisibility,
+      required_product_state_code:['A','B','C'].includes(beat.required_product_state_code)?beat.required_product_state_code:null,facility_claim_status:beat.facility_claim_status||'CONTEXTUAL_INDUSTRIAL_VISUAL',reference_asset_ids:list(beat.reference_asset_ids),
+      preferred_media_routes:list(beat.preferred_media_routes) as any,generation_permission:['T2V_ALLOWED','REFERENCE_REQUIRED','EDITOR_ONLY','NOT_ALLOWED'].includes(beat.generation_permission)?beat.generation_permission:'NOT_ALLOWED',exact_factory_claim_allowed:beat.exact_factory_claim_allowed===true,
+      preferred_shot_scales:list(beat.preferred_shot_scales),preferred_camera_movements:list(beat.preferred_camera_movements),minimum_usable_duration_seconds:Number(beat.minimum_usable_duration_seconds)||0,preferred_duration_seconds:Number(beat.preferred_duration_seconds)||10,maximum_duration_seconds:Number(beat.maximum_duration_seconds)||10,
+      must_show:list(beat.must_show),must_not_show:list(beat.must_not_show),continuity_requirements:list(beat.continuity_requirements),negative_constraints:list(beat.negative_constraints),
+    } as V2VisualBeat));
+    return chapter;
+  });
+  const all = chapters.flatMap(chapter => chapter.visual_beats.map(beat => ({ chapter, beat })));
   const normalized:Candidate[]=all.map(({ chapter, beat }):Candidate => {
     if (beat.generation_permission === 'T2V_ALLOWED' && beat.preferred_media_routes.includes('GENERATED_T2V')) return { chapter, beat, treatment: treatmentFor(beat), sourceBeatId: beat.beat_id };
     if(GRAPHIC.has(beat.visual_family)){
@@ -214,10 +241,11 @@ function explicitChapterIndex(text:string):number|null{
   return Number.isInteger(number)&&number>0?number-1:null;
 }
 function chapterSearchText(chapter:V2Chapter):string{
-  return [chapter.chapter_name,chapter.narrative_goal,chapter.chapter_question,chapter.chapter_payoff,chapter.opening_rehook_intent,...chapter.visual_beats.flatMap(beat=>[beat.beat_name,beat.narrative_purpose,...beat.semantic_alignment_terms])].filter(Boolean).join(' ');
+  const beats=Array.isArray(chapter.visual_beats)?chapter.visual_beats:[];
+  return [chapter.chapter_name,chapter.narrative_goal,chapter.chapter_question,chapter.chapter_payoff,chapter.opening_rehook_intent,...beats.flatMap(beat=>[beat?.beat_name,beat?.narrative_purpose,...list(beat?.semantic_alignment_terms)])].filter(Boolean).join(' ');
 }
 function alignScenesToChapters(handoff:VisualProductionHandoffV2|null,scenes:TimedScene[]):Array<V2Chapter|null>{
-  const chapters=handoff?.visual_story_plan?.chapters||[];
+  const chapters=(Array.isArray(handoff?.visual_story_plan?.chapters)?handoff.visual_story_plan.chapters:[]).filter((chapter:any)=>chapter&&typeof chapter==='object');
   if(!chapters.length)return scenes.map(()=>null);
   let current=0;const hasExplicit=scenes.some(scene=>explicitChapterIndex(scene.text)!==null);
   return scenes.map(scene=>{
@@ -300,7 +328,7 @@ function selectGraphicScenes(scenes:TimedScene[],chapterAssignments:Array<V2Chap
 function semanticFallbackCandidate(chapter:V2Chapter|null,candidates:Candidate[],topic:TopicBrief):Candidate{
   const seed=candidates.find(candidate=>candidate.chapter?.chapter_id===chapter?.chapter_id)||candidates[0];
   if(seed){
-    const stage=seed.beat.applicable_stage_ids[0]||chapter?.applicable_production_stage_ids[0]||topic.lifecycle_stages?.[0]?.stage_id||'STAGE_01';
+    const stage=seed.beat.applicable_stage_ids[0]||chapter?.applicable_production_stage_ids?.[0]||topic.lifecycle_stages?.[0]?.stage_id||'STAGE_01';
     const environment=seed.beat.environment_ids[0]||topic.lifecycle_stages?.find(item=>item.stage_id===stage)?.environment_ref||topic.environments[0]?.environment_id||'ENV_01';
     const beat:V2VisualBeat={...seed.beat,beat_id:`${chapter?.chapter_id||'LEGACY'}__SEMANTIC_FALLBACK`,beat_name:'Narration-matched manufacturing evidence',story_function:'EXPLAIN_PROCESS',visual_family:'ASSEMBLY_PROCESS',narrative_purpose:'Show the physical manufacturing subject, component, interface, or test described by this narration without changing location or lifecycle state.',semantic_alignment_terms:['manufacturing','assembly','component','interface','test'],applicable_stage_ids:[stage],environment_ids:[environment],product_visibility:'PARTIAL',reference_asset_ids:[],preferred_media_routes:['GENERATED_T2V'],generation_permission:'T2V_ALLOWED',exact_factory_claim_allowed:false,must_show:[],must_not_show:[...seed.beat.must_not_show,'deployed product footage unrelated to the narration','unassigned factory aerial','unassigned technical graphic']};
     return {chapter,beat,treatment:'LIVE_ACTION_T2V',sourceBeatId:beat.beat_id};
@@ -309,7 +337,7 @@ function semanticFallbackCandidate(chapter:V2Chapter|null,candidates:Candidate[]
 }
 
 export function buildDocumentaryScenePlan(topic: TopicBrief, scenes: TimedScene[]): PlannedScene[] {
-  const handoff = isV2(topic) ? topic._production_handoff : null;
+  const handoff = isV2(topic)&&hasUsableV2StoryPlan(topic._production_handoff) ? topic._production_handoff : null;
   const operationalEligible=isOperationallyMobileProduct(topic);
   const aviationEligible=isAviationProduct(topic);
   const sourceCandidates = handoff ? candidatesFromV2(handoff) : legacyCandidates(topic);
@@ -348,9 +376,9 @@ export function buildDocumentaryScenePlan(topic: TopicBrief, scenes: TimedScene[
     const scored=pool.map(candidate => {
       const beat=candidate.beat;
       const words=tokenize(`${beat.beat_name} ${beat.narrative_purpose} ${beat.semantic_alignment_terms.join(' ')}`);
-      const stage=beat.applicable_stage_ids[0]||chapter?.applicable_production_stage_ids[0]||topic.lifecycle_stages?.[0]?.stage_id||'STAGE_01';
+      const stage=beat.applicable_stage_ids[0]||chapter?.applicable_production_stage_ids?.[0]||topic.lifecycle_stages?.[0]?.stage_id||'STAGE_01';
       const stageData=stages.find(x=>x.stage_id===stage);
-      const env=beat.environment_ids[0] || stageData?.environment_ids[0] || topic.lifecycle_stages?.find(x=>x.stage_id===stage)?.environment_ref || topic.environments[0]?.environment_id || 'ENV_01';
+      const env=beat.environment_ids[0] || stageData?.environment_ids?.[0] || topic.lifecycle_stages?.find(x=>x.stage_id===stage)?.environment_ref || topic.environments[0]?.environment_id || 'ENV_01';
       const semantic=overlap(vo,words);
       const orderRange=Math.max(...pool.map(item=>item.beat.beat_order),1);
       let score=semantic*14-Math.abs((beat.beat_order/orderRange)-chapterProgress)*5;

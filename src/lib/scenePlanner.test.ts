@@ -3,6 +3,7 @@ import test from 'node:test';
 import template from '../schemas/Modus_Visual_Production_Handoff_V2_Template.json';
 import { normalizeProductionHandoff } from './productionTemplate';
 import { buildDocumentaryScenePlan, deriveGraphicSceneSpec, isOperationallyMobileProduct } from './scenePlanner';
+import { validateVisualProductionHandoff } from './handoffValidation';
 
 const scenes=(count:number,duration=10)=>Array.from({length:count},(_,i)=>({number:i+1,start:i*duration,end:(i+1)*duration,duration,text:i%4===0?'factory scale and logistics':i%4===1?'assembly workers install component':i%4===2?'precision testing and measurement':'mechanical system relationship',silent:false}));
 const operationalTopic=(productClass='combat helicopter',restricted=false)=>{
@@ -14,6 +15,38 @@ const operationalTopic=(productClass='combat helicopter',restricted=false)=>{
   raw.visual_story_plan.chapters[0].visual_beats.push(beat('OP_HOOK','OPERATIONAL_CONTEXT','OPENING_HOOK','Controlled low hover in a generic flight drill'),beat('OP_PAYOFF','DYNAMIC_TESTING','PREVIEW_PAYOFF','Banked operational transit over a generic test range'));
   return normalizeProductionHandoff(raw);
 };
+
+test('plans safely from a minimally compatible V2 handoff without a visual story plan',()=>{
+  const raw:any={
+    schema:{name:'Modus Assembly Visual Production Handoff',version:'2.3.0',contract_type:'VISUAL_ONLY_ENGINE_TO_APP_HANDOFF'},
+    product:{official_name:'MX-1',exact_variant:'',product_class:'industrial machine'},
+    production_stages:[{stage_id:'STG_01',stage_name:'Structural assembly',product_state_code:'UNKNOWN',stage_visual_summary:'Workers align the primary structural frame',stage_actions:[]}],
+    extra_research_metadata:{source_count:4},
+  };
+  const validation=validateVisualProductionHandoff(raw);
+  assert.equal(validation.valid,true);
+  assert.ok(validation.warnings.length>0);
+  const topic=normalizeProductionHandoff(raw);
+  assert.equal(topic.environments[0].environment_id,'ENV_DERIVED');
+  const plan=buildDocumentaryScenePlan(topic,scenes(3));
+  assert.equal(plan.length,3);
+  assert.ok(plan.every(item=>item.environment_ref==='ENV_DERIVED'));
+  assert.ok(plan.every(item=>['A','B','C'].includes(item.state)));
+});
+
+test('normalizes recoverable beat enums and missing optional arrays to safe T2V',()=>{
+  const raw:any=JSON.parse(JSON.stringify(template));raw.product.official_name='MX-2';
+  const beat=raw.visual_story_plan.chapters[0].visual_beats[0];
+  beat.visual_family='UNRECOGNIZED_FAMILY';beat.story_function='UNRECOGNIZED_FUNCTION';beat.product_visibility='UNRECOGNIZED_VISIBILITY';beat.generation_permission='UNRECOGNIZED_PERMISSION';beat.preferred_media_routes=[];
+  delete beat.semantic_alignment_terms;delete beat.must_show;delete beat.must_not_show;
+  const validation=validateVisualProductionHandoff(raw);
+  assert.equal(validation.valid,true);
+  const plan=buildDocumentaryScenePlan(normalizeProductionHandoff(raw),scenes(1));
+  assert.equal(plan.length,1);
+  assert.equal(plan[0].visual_treatment,'LIVE_ACTION_T2V');
+  assert.ok(['ASSEMBLY_PROCESS','COMPONENT_MACRO','HERO_PRODUCT'].includes(plan[0].visual_family));
+  assert.ok(['A','B','C'].includes(plan[0].state));
+});
 
 test('preserves coherent manufacturing runs instead of forcing a new family every two scenes',()=>{
   const topic=normalizeProductionHandoff(JSON.parse(JSON.stringify(template)));
