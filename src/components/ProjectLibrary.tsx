@@ -163,9 +163,6 @@ export function ProjectLibrary({
                           <Badge variant="outline" className="text-[10px] py-0 px-1.5 opacity-70 font-mono">
                             {project.category}
                           </Badge>
-                          {project.handoffMode&&<Badge variant="outline" className="text-[10px] py-0 px-1.5 opacity-70 font-mono">
-                            {project.handoffMode==='ENGINEERING_V3'?'ENGINEERING V3':'MANUFACTURING V2'}
-                          </Badge>}
                           <Badge variant="outline" className={`text-[10px] py-0 px-1.5 font-mono ${phaseInfo.color}`}>
                             {phaseInfo.icon}
                             {phaseInfo.label}

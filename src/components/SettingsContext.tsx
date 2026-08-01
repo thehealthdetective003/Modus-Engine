@@ -9,7 +9,6 @@ const defaultSettings: Settings = {
   defaultStyle: 'Educational',
   sceneDurationSeconds: 10,
   productionTemplate: DEFAULT_PRODUCTION_TEMPLATE,
-  productionTemplateMode: 'MANUFACTURING_V2',
   productionTemplateName: 'Modus Visual Production Handoff V2',
 };
 

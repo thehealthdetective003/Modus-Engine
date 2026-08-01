@@ -13,7 +13,7 @@ import {
 import { toast } from 'sonner';
 
 import { useSettings } from './SettingsContext';
-import { AppState, HandoffMode } from '../types';
+import { AppState } from '../types';
 import {
   Sheet,
   SheetContent,
@@ -33,7 +33,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { DEFAULT_PRODUCTION_TEMPLATE } from '../lib/productionTemplate';
-import { HandoffValidationResult, handoffModeFor, validateHandoffForMode, validateVisualProductionHandoff } from '../lib/handoffValidation';
+import { HandoffValidationResult, validateVisualProductionHandoff } from '../lib/handoffValidation';
 
 interface SettingsPanelProps {
   state: AppState;
@@ -44,11 +44,8 @@ interface SettingsPanelProps {
 
 export function SettingsPanel({ state, setState, open, onOpenChange }: SettingsPanelProps) {
   const { settings, setSettings } = useSettings();
-  const activeTemplate=settings.productionTemplate || DEFAULT_PRODUCTION_TEMPLATE;
-  const activeTemplateMode=settings.productionTemplateMode||handoffModeFor(activeTemplate);
-  const productionTemplateStatus = activeTemplateMode?validateHandoffForMode(activeTemplate,activeTemplateMode):validateVisualProductionHandoff(activeTemplate);
+  const productionTemplateStatus = validateVisualProductionHandoff(settings.productionTemplate || DEFAULT_PRODUCTION_TEMPLATE);
   const [templateImportResult, setTemplateImportResult] = useState<HandoffValidationResult | null>(null);
-  const [templateImportMode, setTemplateImportMode] = useState<HandoffMode|null>(null);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -175,7 +172,7 @@ export function SettingsPanel({ state, setState, open, onOpenChange }: SettingsP
             <div className="border-b border-border/10 pb-2">
               <span className="text-[10px] text-muted-foreground tracking-widest uppercase font-bold flex items-center gap-1.5">
                 <FileUp className="w-3.5 h-3.5" />
-                04 / HANDOFF JSON TEMPLATE
+                04 / PRODUCTION JSON TEMPLATE
               </span>
             </div>
             <div className="space-y-3 bg-muted/20 border border-border/40 p-4 rounded-lg">
@@ -194,25 +191,12 @@ export function SettingsPanel({ state, setState, open, onOpenChange }: SettingsP
                 </div>
               </div>
               <p className="text-[10px] text-muted-foreground leading-relaxed normal-case">
-                Importing replaces the blank handoff template and its generated research prompt. Manufacturing V2 and Engineering V3 remain independently validated and use separate planning semantics.
+                Importing replaces the blank Standard Lifecycle template and its generated research prompt. Filled handoff files are converted into the app's stage, environment, geometry-lock, continuity, and negative-prompt fields when loaded in Phase 1.
               </p>
               <div className="grid grid-cols-2 gap-2">
-                {(['MANUFACTURING_V2','ENGINEERING_V3'] as HandoffMode[]).map(mode=><Button
-                  key={mode}
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  aria-pressed={templateImportMode===mode}
-                  onClick={()=>{setTemplateImportMode(mode);setTemplateImportResult(null);}}
-                  className={templateImportMode===mode?'h-auto min-h-10 border-amber-500 bg-amber-500/10 text-[9px]':'h-auto min-h-10 text-[9px]'}
-                >{mode==='MANUFACTURING_V2'?'MANUFACTURING V2':'ENGINEERING V3'}</Button>)}
-              </div>
-              {!templateImportMode&&<p className="text-[10px] text-amber-500 normal-case">Select the template contract before importing.</p>}
-              <div className="grid grid-cols-2 gap-2">
-                <Button disabled={!templateImportMode} variant="outline" size="sm" className="relative h-9 text-[10px] font-mono">
+                <Button variant="outline" size="sm" className="relative h-9 text-[10px] font-mono">
                   <FileUp className="h-3.5 w-3.5 mr-2" /> IMPORT JSON
                   <input
-                    disabled={!templateImportMode}
                     type="file"
                     accept=".json,application/json"
                     className="absolute inset-0 opacity-0 cursor-pointer"
@@ -224,10 +208,9 @@ export function SettingsPanel({ state, setState, open, onOpenChange }: SettingsP
                       reader.onload = () => {
                         try {
                           const parsed = JSON.parse(String(reader.result));
-                          if(!templateImportMode){toast.error('Select a template contract first.');return;}
-                          const result = validateHandoffForMode(parsed,templateImportMode);
+                          const result = validateVisualProductionHandoff(parsed);
                           setTemplateImportResult(result);
-                          if (!result.valid || !['v1','v2','v3'].includes(result.format)) {
+                          if (!result.valid || (result.format !== 'v1' && result.format !== 'v2')) {
                             const details = result.errors.slice(0, 3).map(item => `${item.path}: ${item.message}`).join(' ');
                             toast.error(`Template not activated (${result.status}). ${details}`);
                             return;
@@ -235,13 +218,12 @@ export function SettingsPanel({ state, setState, open, onOpenChange }: SettingsP
                           setSettings(prev => ({
                             ...prev,
                             productionTemplate: parsed,
-                            productionTemplateMode: templateImportMode,
                             productionTemplateName: parsed.schema?.name || file.name,
                             productionTemplateImportedAt: new Date().toISOString(),
                           }));
                           toast.success(`${result.status} template imported and activated.`);
                         } catch {
-                          setTemplateImportResult(templateImportMode?validateHandoffForMode(null,templateImportMode):null);
+                          setTemplateImportResult(validateVisualProductionHandoff(null));
                           toast.error('The selected file is not valid JSON.');
                         } finally {
                           input.value = '';
@@ -256,9 +238,8 @@ export function SettingsPanel({ state, setState, open, onOpenChange }: SettingsP
                   size="sm"
                   className="h-9 text-[10px] font-mono"
                   onClick={() => {
-                    setSettings(prev => ({ ...prev, productionTemplate: DEFAULT_PRODUCTION_TEMPLATE, productionTemplateMode:'MANUFACTURING_V2', productionTemplateName: 'Modus Visual Production Handoff V2', productionTemplateImportedAt: undefined }));
-                    setTemplateImportMode('MANUFACTURING_V2');
-                    setTemplateImportResult(validateHandoffForMode(DEFAULT_PRODUCTION_TEMPLATE,'MANUFACTURING_V2'));
+                    setSettings(prev => ({ ...prev, productionTemplate: DEFAULT_PRODUCTION_TEMPLATE, productionTemplateName: 'Modus Visual Production Handoff V2', productionTemplateImportedAt: undefined }));
+                    setTemplateImportResult(validateVisualProductionHandoff(DEFAULT_PRODUCTION_TEMPLATE));
                     toast.success('Bundled V2 production template restored.');
                   }}
                 >

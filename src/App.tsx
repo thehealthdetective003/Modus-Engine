@@ -26,18 +26,14 @@ import { toast } from 'sonner';
 import { resplitTranscription, resetDownstreamForTiming } from './lib/timedTranscript';
 import { migrateProject, projectSceneDuration } from './lib/projectMigration';
 const PHASES = [
-  { id: 1, label: 'TOPIC', description: 'Select Handoff Contract' },
+  { id: 1, label: 'TOPIC', description: 'Select Manufacturing Subject' },
   { id: 2, label: 'VO & DIRECTION', description: 'Import Timestamps and Direct Scenes' },
   { id: 3, label: 'T2V PROMPTS', description: 'Generate Timestamped Video Prompts' },
 ];
 export const INITIAL_STATE: AppState = {
-  projectSchemaVersion: 10,
-  scenePlanFormatVersion: 2,
-  handoffMode: null,
-  schemaVersion: null,
-  rawHandoff: null,
+  projectSchemaVersion: 9,
   id: undefined,
-  projectName: 'Untitled Production Project',
+  projectName: 'Untitled Manufacturing Sequence',
   projectFormat: 'standard-lifecycle',
   phase: 1,
   topic: null,
@@ -98,7 +94,7 @@ export default function App() {
           setState(migration.state);
           setLastSavedState(JSON.stringify(migration.state));
         } else {
-          toast.error(migration.error||'The auto-saved project could not be loaded.');
+          toast.error('The auto-saved project uses an unsupported production format. Only Standard Lifecycle is available.');
         }
       } catch (e) {
         console.error('Failed to parse assembly_line_save', e);
@@ -180,7 +176,7 @@ export default function App() {
       const migration = migrateProject(loaded, INITIAL_STATE, duration);
       const merged = migration.state;
       if (!merged) {
-        toast.error(migration.error||'This project could not be loaded.');
+        toast.error('This project uses an unsupported production format. Only Standard Lifecycle projects can be loaded.');
         setPendingAction(null);
         return;
       }
@@ -332,7 +328,7 @@ export default function App() {
                           const migration = migrateProject(importedData, INITIAL_STATE, duration);
                           const merged = migration.state;
                           if (!merged) {
-                            toast.error(migration.error||'The project file could not be loaded.');
+                            toast.error('Unsupported production format. Only Standard Lifecycle projects can be loaded.');
                             return;
                           }
                           setState(merged);

@@ -2,15 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import template from '../schemas/Modus_Visual_Production_Handoff_V2_Template.json';
 import { LEGACY_PRODUCTION_TEMPLATE, normalizeProductionHandoff } from './productionTemplate';
-import { parseAndValidateHandoffJson, parseAndValidateHandoffJsonForMode, reviewMustShowEntry, validateHandoffForMode, validateVisualProductionHandoff } from './handoffValidation';
-import { makeValidEngineeringHandoff } from '../testFixtures/engineeringV3';
+import { validateVisualProductionHandoff } from './handoffValidation';
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 
 test('bundled V2 template validates with two environments and one stage', () => {
   const result = validateVisualProductionHandoff(template);
   assert.equal(result.valid, true);
-  assert.equal(result.status, 'Valid Manufacturing V2');
+  assert.equal(result.status, 'Valid V2');
   assert.equal(template.environments.length, 2);
   assert.equal(template.production_stages.length, 1);
 });
@@ -31,7 +30,7 @@ test('V2 schema reports missing, enum, additional-property, ID, and version erro
   const unsupported: any = clone(template); unsupported.schema.version = '3.0.0';
   const unsupportedResult = validateVisualProductionHandoff(unsupported);
   assert.equal(unsupportedResult.valid, false);
-  assert.equal(unsupportedResult.format, 'mixed');
+  assert.equal(unsupportedResult.format, 'unsupported');
 });
 
 test('V2 semantic validation detects every duplicate ID family', () => {
@@ -86,134 +85,6 @@ test('normalization uses first V2 environment and preserves complete raw handoff
   const normalized = normalizeProductionHandoff(value);
   assert.equal(normalized.lifecycle_stages?.[0].environment_ref, 'ENV_FACTORY_AERIAL');
   assert.deepEqual(normalized._production_handoff, value);
-  assert.equal(validateVisualProductionHandoff(normalized).status, 'Valid Manufacturing V2');
+  assert.equal(validateVisualProductionHandoff(normalized).status, 'Valid V2');
   assert.deepEqual(JSON.parse(JSON.stringify(normalized))._production_handoff.visual_story_plan, value.visual_story_plan);
-});
-
-test('detects and validates a complete Engineering V3 handoff independently',()=>{
-  const value=makeValidEngineeringHandoff(),result=validateVisualProductionHandoff(value);
-  assert.equal(result.valid,true);
-  assert.equal(result.format,'v3');
-  assert.equal(result.mode,'ENGINEERING_V3');
-  assert.equal(result.status,'Valid Engineering V3');
-  assert.equal(result.schemaErrors.length,0);
-});
-
-test('reports syntax, unknown version, mixed-mode, and missing V3 fields separately',()=>{
-  const syntax=parseAndValidateHandoffJson('{"schema":');
-  assert.equal(syntax.result.syntaxErrors[0].code,'syntax');
-  const unknown:any=clone(makeValidEngineeringHandoff());unknown.schema.version='4.0.0';
-  assert.equal(validateVisualProductionHandoff(unknown).format,'unsupported');
-  const mixed:any=clone(makeValidEngineeringHandoff());mixed.production_stages=[];
-  assert.equal(validateVisualProductionHandoff(mixed).format,'mixed');
-  const missing:any=clone(makeValidEngineeringHandoff());delete missing.operational_states;
-  assert.ok(validateVisualProductionHandoff(missing).schemaErrors.some(error=>error.path==='/operational_states'));
-});
-
-test('V3 semantic validation rejects duplicate IDs, broken references, endpoints, order, and duration',()=>{
-  const value:any=clone(makeValidEngineeringHandoff());
-  value.engineering_systems.push(clone(value.engineering_systems[0]));
-  value.operational_states[0].environment_ids=['ENV_MISSING'];
-  value.system_relationships[0].to_system_id='SYS_MISSING';
-  value.concept_bridges[0].to_system_id='SYS_MISSING_BRIDGE';
-  value.visual_story_plan.chapters[0].visual_beats[0].preferred_duration_seconds=12;
-  value.visual_story_plan.chapters[0].visual_beats[0].maximum_duration_seconds=10;
-  const result=validateVisualProductionHandoff(value);
-  assert.equal(result.valid,false);
-  for(const expected of ['Duplicate system_id','ENV_MISSING','SYS_MISSING','SYS_MISSING_BRIDGE','minimum ≤ preferred ≤ maximum'])
-    assert.ok(result.errors.some(error=>error.message.includes(expected)),`missing ${expected}`);
-});
-
-test('V3 evidence and routing rules block unsupported exact and forbidden generation',()=>{
-  const referenceRequired:any=clone(makeValidEngineeringHandoff());
-  const beat=referenceRequired.visual_story_plan.chapters[0].visual_beats[0];
-  beat.generation_permission='REFERENCE_REQUIRED';beat.preferred_media_routes=['GENERATED_T2V'];
-  assert.ok(validateVisualProductionHandoff(referenceRequired).errors.some(error=>error.code==='routing'));
-
-  const notAllowed:any=clone(makeValidEngineeringHandoff());
-  notAllowed.evidence_boundaries.claims[0].visualization_permission='NOT_ALLOWED';
-  assert.ok(validateVisualProductionHandoff(notAllowed).errors.some(error=>error.code==='evidence'&&error.message.includes('NOT_ALLOWED')));
-
-  const exact:any=clone(makeValidEngineeringHandoff());
-  exact.visual_story_plan.chapters[0].visual_beats[0].exact_event_or_location_claim_allowed=true;
-  assert.ok(validateVisualProductionHandoff(exact).errors.some(error=>error.message.includes('Exact event/location')));
-
-  const cutaway:any=clone(makeValidEngineeringHandoff());
-  cutaway.visual_story_plan.chapters[0].visual_beats[0].visual_family='SYSTEM_CUTAWAY';
-  cutaway.visual_story_plan.chapters[0].visual_beats[0].reference_asset_ids=[];
-  assert.ok(validateVisualProductionHandoff(cutaway).errors.some(error=>error.message.includes('internal cutaway')));
-});
-
-test('V3 accepts partially covered assets that independently verify an exact event or location',()=>{
-  const value:any=clone(makeValidEngineeringHandoff());
-  const asset=value.reference_assets[0],beat=value.visual_story_plan.chapters[0].visual_beats[0];
-  asset.visual_verification='PARTIAL';asset.context_truth_status='EXACT_LOCATION_VERIFIED';asset.exact_event_or_location_verified=true;
-  beat.context_truth_status='EXACT_LOCATION_VERIFIED';beat.exact_event_or_location_claim_allowed=true;
-  beat.generation_permission='REFERENCE_REQUIRED';beat.preferred_media_routes=['REFERENCE_LOCKED_GRAPHIC'];
-  const result=validateVisualProductionHandoff(value);
-  assert.equal(result.errors.some(error=>error.message.includes('Exact event/location')),false);
-  asset.visual_verification='FAIL';
-  assert.equal(validateVisualProductionHandoff(value).errors.some(error=>error.message.includes('Exact event/location')),true);
-});
-
-test('V3 readable-graphic routing distinguishes qualitative label-free visuals from readable data',()=>{
-  const qualitative:any=clone(makeValidEngineeringHandoff());
-  const beat=qualitative.visual_story_plan.chapters[0].visual_beats[0];
-  beat.narrative_purpose='Contrast narrow overlap with wider separation while keeping the result qualitative and label-free.';
-  beat.semantic_alignment_terms=['predict-correct cycle','measurement update'];
-  beat.must_show=['one grey hull block advances','one dashed blue path lengthens','one cyan pulse reaches block'];
-  assert.equal(validateVisualProductionHandoff(qualitative).errors.some(error=>error.message.includes('Readable maps')),false);
-  beat.narrative_purpose='Present the reported 96.23-percent result with editor-controlled readable data.';
-  assert.equal(validateVisualProductionHandoff(qualitative).errors.some(error=>error.message.includes('Readable maps')),true);
-});
-
-test('V3 requires four systems and meaningful beat alignment',()=>{
-  const value:any=clone(makeValidEngineeringHandoff());
-  value.engineering_systems=value.engineering_systems.slice(0,3);
-  value.visual_story_plan.chapters[0].visual_beats[0].semantic_alignment_terms=[];
-  const result=validateVisualProductionHandoff(value);
-  assert.ok(result.errors.some(error=>error.message.includes('at least four')));
-  assert.ok(result.errors.some(error=>error.message.includes('semantic-alignment')));
-});
-
-test('selected handoff type exclusively controls validation and reports mode mismatch',()=>{
-  const v3=makeValidEngineeringHandoff();
-  const wrongManufacturing=validateHandoffForMode(v3,'MANUFACTURING_V2');
-  assert.equal(wrongManufacturing.valid,false);
-  assert.equal(wrongManufacturing.selectedMode,'MANUFACTURING_V2');
-  assert.equal(wrongManufacturing.declaredMode,'ENGINEERING_V3');
-  assert.equal(wrongManufacturing.schemaErrors.length,1);
-  assert.equal(wrongManufacturing.schemaErrors[0].code,'mode-mismatch');
-  assert.match(wrongManufacturing.schemaErrors[0].message,/Select Visual Engineering Handoff V3/);
-  assert.equal(wrongManufacturing.semanticErrors.length,0);
-
-  const wrongEngineering=validateHandoffForMode(template,'ENGINEERING_V3');
-  assert.equal(wrongEngineering.valid,false);
-  assert.equal(wrongEngineering.schemaErrors[0].code,'mode-mismatch');
-  assert.match(wrongEngineering.schemaErrors[0].message,/Select Factory Manufacturing Handoff/);
-
-  const rightEngineering=parseAndValidateHandoffJsonForMode(JSON.stringify(v3),'ENGINEERING_V3');
-  assert.equal(rightEngineering.result.valid,true);
-  assert.equal(rightEngineering.result.selectedMode,'ENGINEERING_V3');
-});
-
-test('Engineering V3 remains closed and rejects manufacturing lifecycle fields',()=>{
-  const mixed:any=clone(makeValidEngineeringHandoff());
-  mixed.lifecycle_stages=[];
-  const result=validateHandoffForMode(mixed,'ENGINEERING_V3');
-  assert.equal(result.valid,false);
-  assert.ok(result.errors.some(error=>error.code==='schema'||error.code==='mixed-mode'));
-});
-
-test('must_show review accepts concrete plural primitives and reports exact abstract values',()=>{
-  for(const value of ['two grey hull blocks','four vertical steel posts','one blue waterline becomes level','three white wake lines converge behind the stern','two technicians','small ripples move outward','one distant shoreline remains still','one grey spindle body','four cyan streamlines remain attached','two round thruster openings','one lifting sling hangs slack','suspended particles drift slowly','one blue wedge widens','one vertical blue bracket','one dark water column']){
-    assert.equal(reviewMustShowEntry(value,'/must_show/0'),null,value);
-  }
-  for(const [index,value] of ['operational capability','proof of maturity','mission success','system reliability'].entries()){
-    const result=reviewMustShowEntry(value,`/visual_story_plan/chapters/0/visual_beats/0/must_show/${index}`);
-    assert.ok(result);
-    assert.equal(result?.severity,'warning');
-    assert.equal(result?.path,`/visual_story_plan/chapters/0/visual_beats/0/must_show/${index}`);
-    assert.match(result?.message||'',new RegExp(value));
-  }
 });

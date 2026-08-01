@@ -41,9 +41,7 @@ export const saveProject = (state: AppState): string => {
     ...state,
     id,
     savedAt: now,
-    createdAt,
-    handoffMode:state.handoffMode,
-    schemaVersion:state.schemaVersion,
+    createdAt
   };
   
   const indexEntry: SavedProject = {
@@ -55,9 +53,7 @@ export const saveProject = (state: AppState): string => {
     sceneCount: state.visualPrompts.length,
     demoOnly: state.demoScenes.length > 0 && state.visualPrompts.length === 0,
     savedAt: now,
-    createdAt,
-    handoffMode:state.handoffMode,
-    schemaVersion:state.schemaVersion,
+    createdAt
   };
   
   // Write full data

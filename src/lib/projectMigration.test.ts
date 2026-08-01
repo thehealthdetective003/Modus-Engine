@@ -4,12 +4,8 @@ import { migrateProject, projectSceneDuration } from './projectMigration';
 import type { AppState } from '../types';
 import template from '../schemas/Modus_Visual_Production_Handoff_V2_Template.json';
 import { normalizeProductionHandoff } from './productionTemplate';
-import { normalizeEngineeringHandoff } from './productionTemplate';
-import { makeValidEngineeringHandoff } from '../testFixtures/engineeringV3';
-import { buildEngineeringScenePlan } from './engineeringScenePlanner';
-import { mergeDirectionMetadata } from './sceneDirections';
 
-const initial = { projectSchemaVersion:10,scenePlanFormatVersion:2,handoffMode:null,schemaVersion:null,rawHandoff:null,projectName:'Untitled',projectFormat:'standard-lifecycle',phase:1,topic:null,plannedScenes:[],sceneDirections:[],masterVoiceoverScript:'',voiceoverTranscription:null,t2vPromptProfile:'omni-flash',visualPrompts:[],demoState:'idle',demoScenes:[],demoSceneNumbers:[] } as AppState;
+const initial = { projectSchemaVersion: 9, projectName: 'Untitled', projectFormat: 'standard-lifecycle', phase: 1, topic: null, plannedScenes:[], sceneDirections: [], masterVoiceoverScript: '', voiceoverTranscription: null, t2vPromptProfile:'omni-flash', visualPrompts: [], demoState: 'idle', demoScenes: [], demoSceneNumbers: [] } as AppState;
 const plan={number:1,chapter_id:'CH01',beat_id:'B01',visual_family:'ASSEMBLY_PROCESS',story_function:'EXPLAIN_PROCESS',visual_treatment:'LIVE_ACTION_T2V',product_visibility:'PARTIAL',stage_id:'S01',environment_ref:'E01',state:'B',showdown_role:null,energy_level:'MEDIUM',camera_platform:null,graphic_spec:null} as const;
 const temporal_action={opening_state:'The part rests in its jig',primary_motion:'A worker lowers the tool',physical_interaction:'The tool contacts the part',mid_shot_progression:'The fastener seats progressively',ending_state:'The tool lifts away from the secured part'};
 
@@ -29,7 +25,7 @@ test('round-trips a complete 8-second T2V project without changing its timeline'
   assert.equal(result.state?.phase, 3);
   assert.equal(result.state?.voiceoverTranscription?.sceneDurationSeconds, 8);
   assert.equal(result.state?.visualPrompts.length, 1);
-  assert.equal(result.state?.projectSchemaVersion, 10);
+  assert.equal(result.state?.projectSchemaVersion, 9);
   assert.equal('apiKey' in parsed, false);
 
   const partial = JSON.parse(JSON.stringify(raw));
@@ -77,37 +73,6 @@ test('resets quota-driven schema 7 and 8 plans so they are rebuilt from the VO',
     assert.deepEqual(result.state?.plannedScenes,[]);
     assert.deepEqual(result.state?.sceneDirections,[]);
     assert.deepEqual(result.state?.visualPrompts,[]);
-    assert.equal(result.state?.projectSchemaVersion,10);
+    assert.equal(result.state?.projectSchemaVersion,9);
   }
-});
-
-test('derives Manufacturing V2 mode for an existing saved project without application metadata',()=>{
-  const topic=normalizeProductionHandoff(JSON.parse(JSON.stringify(template)));
-  const result=migrateProject({projectSchemaVersion:9,projectFormat:'standard-lifecycle',phase:1,topic},initial,10);
-  assert.equal(result.state?.handoffMode,'MANUFACTURING_V2');
-  assert.equal(result.state?.schemaVersion,'2.0.0');
-  assert.deepEqual(result.state?.rawHandoff,template);
-});
-
-test('round-trips Engineering V3 mode and derived metadata without adding V2 stage fields',()=>{
-  const rawHandoff=makeValidEngineeringHandoff(),topic=normalizeEngineeringHandoff(rawHandoff);
-  const timed={number:1,start:0,end:10,duration:10,text:'One visible control surface responds to a command.',silent:false};
-  const transcription:any={audioFileName:'v3.json',duration:10,language:'en',languageProbability:1,model:'external',computeType:'external',text:timed.text,segments:[],words:[{text:timed.text,start:0,end:10,probability:1}],sceneDurationSeconds:10,scenes:[timed],importedAt:'now'};
-  const plannedScenes=buildEngineeringScenePlan(topic,[timed]);
-  const generated={number:1,subject:'EX-1 external geometry',product_visual_state:'Stable test configuration',primary_action:'One control surface deflects',supporting_motion:'Light dust moves',environment_description:'Generic test range',camera:{shot_scale:'medium-wide',lens:'normal',angle:'rear',movement:'locked camera',movement_speed:'none'},lighting_and_material:'Neutral daylight',continuity_from_previous:'Opening',transition_to_next:'Hold',required_visible_features:['two outward-canted tails'],forbidden_elements:['unknown internals'],temporal_action:{opening_state:'Aircraft rests',primary_motion:'Surface moves',physical_interaction:'Control response is visible',mid_shot_progression:'Surface reaches angle',ending_state:'Surface returns'}};
-  const sceneDirections=mergeDirectionMetadata([generated],[timed],plannedScenes);
-  const raw:any={...initial,projectSchemaVersion:10,scenePlanFormatVersion:3,handoffMode:'ENGINEERING_V3',schemaVersion:'3.0.0',rawHandoff,topic,phase:3,voiceoverTranscription:transcription,plannedScenes,sceneDirections,visualPrompts:[{number:1,handoff_mode:'ENGINEERING_V3',engineering_system_ids:plannedScenes[0].engineering_system_ids,operational_state_ids:plannedScenes[0].operational_state_ids,evidence_claim_ids:plannedScenes[0].evidence_claim_ids,relationship_id:plannedScenes[0].relationship_id,truth_status:plannedScenes[0].truth_status,generation_permission:'T2V_ALLOWED',media_route:'GENERATED_T2V',action_description:'Surface moves',video_prompt:'Prompt',voiceover:timed.text,stock_keywords:'control surface'}]};
-  const result=migrateProject(JSON.parse(JSON.stringify(raw)),initial,10);
-  assert.equal(result.state?.phase,3);
-  assert.equal(result.state?.handoffMode,'ENGINEERING_V3');
-  assert.deepEqual(result.state?.rawHandoff,rawHandoff);
-  assert.equal(result.state?.sceneDirections[0].stage_id,undefined);
-  assert.equal(result.state?.sceneDirections[0].state,undefined);
-  assert.equal(result.state?.visualPrompts[0].media_route,'GENERATED_T2V');
-});
-
-test('requires an explicit type when legacy project evidence cannot identify a handoff',()=>{
-  const result=migrateProject({projectSchemaVersion:10,projectFormat:'standard-lifecycle',phase:1,topic:{unrecognized:true}},initial,10);
-  assert.equal(result.state,null);
-  assert.match(result.error||'',/no safely detectable handoff type/i);
 });

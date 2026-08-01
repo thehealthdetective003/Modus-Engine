@@ -1,7 +1,7 @@
 import { PlannedScene, SceneDirection, TimedScene } from '../types';
 
 const requiredStrings: Array<keyof SceneDirection> = [
-  'subject', 'product_visual_state', 'primary_action', 'supporting_motion',
+  'stage_id', 'subject', 'product_visual_state', 'primary_action', 'supporting_motion',
   'environment_ref', 'environment_description', 'lighting_and_material',
   'continuity_from_previous', 'transition_to_next',
 ];
@@ -20,15 +20,15 @@ export function mergeDirectionMetadata(generated: any[], timedScenes: TimedScene
   return timedScenes.map(timed => {
     const item = byNumber.get(timed.number) || {};
     const plan = planByNumber.get(timed.number)!;
-    const common = {
+    return {
       number: timed.number, start: timed.start, end: timed.end, duration: timed.duration,
       voiceover: timed.text, silent: timed.silent,
-      handoff_mode:plan?.handoff_mode,
       chapter_id: plan?.chapter_id || '', beat_id: plan?.beat_id || '', visual_family: plan?.visual_family,
       story_function: plan?.story_function, visual_treatment: plan?.visual_treatment,
       product_visibility: plan?.product_visibility, showdown_role:plan?.showdown_role ?? null,
       energy_level:plan?.energy_level, camera_platform:plan?.camera_platform ?? null,
       graphic_spec:plan?.graphic_spec ?? null,
+      stage_id: plan?.stage_id || String(item.stage_id || ''), state: plan?.state || String(item.state||'').toUpperCase().replace(/^STATE[_\s-]*/,'') as 'A'|'B'|'C',
       subject: String(item.subject || ''), product_visual_state: String(item.product_visual_state || ''),
       primary_action: String(item.primary_action || ''), supporting_motion: String(item.supporting_motion || ''),
       environment_ref: plan?.environment_ref || String(item.environment_ref || ''), environment_description: String(item.environment_description || ''),
@@ -46,10 +46,7 @@ export function mergeDirectionMetadata(generated: any[], timedScenes: TimedScene
         physical_interaction: String(item.temporal_action?.physical_interaction || ''), mid_shot_progression: String(item.temporal_action?.mid_shot_progression || ''),
         ending_state: String(item.temporal_action?.ending_state || ''),
       },
-    };
-    return plan?.handoff_mode==='ENGINEERING_V3'
-      ?{...common,engineering_system_ids:plan.engineering_system_ids||[],operational_state_ids:plan.operational_state_ids||[],evidence_claim_ids:plan.evidence_claim_ids||[],geometry_module_ids:plan.geometry_module_ids||[],relationship_id:plan.relationship_id??null,concept_bridge_id:plan.concept_bridge_id??null,truth_status:plan.truth_status,generation_permission:plan.generation_permission,media_route:plan.media_route,source_generation_permission:plan.source_generation_permission,source_media_route:plan.source_media_route,t2v_substitution:plan.t2v_substitution,route_reason:plan.route_reason} as SceneDirection
-      :{...common,stage_id:plan?.stage_id||String(item.stage_id||''),state:plan?.state||String(item.state||'').toUpperCase().replace(/^STATE[_\s-]*/,'') as 'A'|'B'|'C'} as SceneDirection;
+    } as SceneDirection;
   });
 }
 
@@ -69,22 +66,12 @@ export function validateSceneDirections(directions: unknown, timedScenes: TimedS
     if (Math.abs(Number(direction.start) - timed.start) > 0.001 || Math.abs(Number(direction.end) - timed.end) > 0.001 || Math.abs(Number(direction.duration) - timed.duration) > 0.001) errors.push(`${label}: timing metadata was modified.`);
     if (String(direction.voiceover ?? '') !== timed.text || Boolean(direction.silent) !== timed.silent) errors.push(`${label}: imported VO or silence metadata was modified.`);
     const plan = plannedScenes?.find(item => item.number === number);
-    const immutableFields=plan?.handoff_mode==='ENGINEERING_V3'
-      ?['handoff_mode','chapter_id','beat_id','visual_family','story_function','visual_treatment','product_visibility','showdown_role','energy_level','camera_platform','engineering_system_ids','operational_state_ids','evidence_claim_ids','geometry_module_ids','relationship_id','concept_bridge_id','truth_status','generation_permission','media_route','source_generation_permission','source_media_route','t2v_substitution','route_reason'] as const
-      :['handoff_mode','chapter_id','beat_id','visual_family','story_function','visual_treatment','product_visibility','showdown_role','energy_level','camera_platform','stage_id','state'] as const;
-    if (plan) immutableFields.forEach(field => {
+    if (plan) (['chapter_id','beat_id','visual_family','story_function','visual_treatment','product_visibility','showdown_role','energy_level','camera_platform','stage_id','state'] as const).forEach(field => {
       const expected=(field==='showdown_role'||field==='camera_platform')?(plan[field]??null):plan[field];
-      if (JSON.stringify(direction[field]??null) !== JSON.stringify(expected??null)) errors.push(`${label}: immutable plan field ${field} was modified.`);
+      if (direction[field] !== expected) errors.push(`${label}: immutable plan field ${field} was modified.`);
     });
     if(plan&&JSON.stringify(direction.graphic_spec??null)!==JSON.stringify(plan.graphic_spec??null))errors.push(`${label}: immutable plan field graphic_spec was modified.`);
-    if(plan?.handoff_mode==='ENGINEERING_V3'){
-      if(!Array.isArray(direction.engineering_system_ids)||direction.engineering_system_ids.length===0)errors.push(`${label}: at least one engineering_system_id is required.`);
-      if(!direction.generation_permission)errors.push(`${label}: generation_permission is required.`);
-      if(!direction.media_route)errors.push(`${label}: media_route is required.`);
-    }else{
-      if (!['A', 'B', 'C'].includes(direction.state)) errors.push(`${label}: state must be A, B, or C.`);
-      if(!String(direction.stage_id||'').trim())errors.push(`${label}: stage_id is required.`);
-    }
+    if (!['A', 'B', 'C'].includes(direction.state)) errors.push(`${label}: state must be A, B, or C.`);
     requiredStrings.forEach(field => { if (!String(direction[field] || '').trim()) errors.push(`${label}: ${field} is required.`); });
     ['shot_scale', 'lens', 'angle', 'movement', 'movement_speed'].forEach(field => { if (!String(direction.camera?.[field] || '').trim()) errors.push(`${label}: camera.${field} is required.`); });
     if (!Array.isArray(direction.required_visible_features) || (direction.product_visibility!=='NONE'&&direction.required_visible_features.length===0)) errors.push(`${label}: required_visible_features must contain at least one item.`);
@@ -102,6 +89,6 @@ export interface StageSummaryItem {
 
 export function calculateStageSummary(directions: SceneDirection[]): StageSummaryItem[] {
   const counts = new Map<string, number>();
-  directions.forEach(item => {if(item.stage_id)counts.set(item.stage_id,(counts.get(item.stage_id)||0)+1);});
+  directions.forEach(item => counts.set(item.stage_id, (counts.get(item.stage_id) || 0) + 1));
   return [...counts.entries()].map(([stage_id, scenes]) => ({ stage_id, scenes }));
 }
