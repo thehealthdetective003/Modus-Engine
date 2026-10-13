@@ -16,14 +16,14 @@ import { cn, copyToClipboard } from '@/lib/utils';
 import { normalizeTopicBrief, validateAdaptiveBrief, validateAdaptiveWarnings, getLifecycleStageCount, getNegativePromptGlobal } from '../lib/adaptiveSchema';
 import { StandardPreview } from './previews/StandardPreview';
 import { useSettings } from './SettingsContext';
-import { DEFAULT_PRODUCTION_TEMPLATE, isProductionHandoff, normalizeProductionHandoff, productionTemplatePrompt } from '../lib/productionTemplate';
+import { DEFAULT_PRODUCTION_TEMPLATE, inferClipLengthSeconds, isProductionHandoff, normalizeProductionHandoff, productionTemplatePrompt } from '../lib/productionTemplate';
 import { HandoffValidationResult, validateVisualProductionHandoff } from '../lib/handoffValidation';
 interface Phase1TopicProps {
   state: AppState;
   setState: React.Dispatch<React.SetStateAction<AppState>>;
 }
 export function Phase1Topic({ state, setState }: Phase1TopicProps) {
-  const { settings } = useSettings();
+  const { settings, setSettings } = useSettings();
   const configuredProductionTemplate = settings.productionTemplate || DEFAULT_PRODUCTION_TEMPLATE;
   const activeProductionTemplate = validateVisualProductionHandoff(configuredProductionTemplate).valid ? configuredProductionTemplate : DEFAULT_PRODUCTION_TEMPLATE;
   const standardBlankTemplate = JSON.stringify(activeProductionTemplate, null, 2);
@@ -138,7 +138,12 @@ export function Phase1Topic({ state, setState }: Phase1TopicProps) {
   };
   const handleLockTopic = () => {
     if (!parsedBrief) return;
-    
+    const clipLength = inferClipLengthSeconds(parsedBrief);
+    if (clipLength && clipLength !== settings.sceneDurationSeconds) {
+      setSettings(previous => ({ ...previous, sceneDurationSeconds: clipLength }));
+      toast.info(`Scene length set to ${clipLength} seconds from the handoff JSON.`);
+    }
+
     setState((prev) => ({
       ...prev,
       topic: parsedBrief,

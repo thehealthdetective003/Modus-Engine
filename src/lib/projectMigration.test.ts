@@ -3,7 +3,7 @@ import test from 'node:test';
 import { migrateProject, projectSceneDuration } from './projectMigration';
 import type { AppState } from '../types';
 import template from '../schemas/Modus_Visual_Production_Handoff_V2_Template.json';
-import { normalizeProductionHandoff } from './productionTemplate';
+import { inferClipLengthSeconds, normalizeProductionHandoff } from './productionTemplate';
 
 const initial = { projectSchemaVersion: 9, projectName: 'Untitled', projectFormat: 'standard-lifecycle', phase: 1, topic: null, plannedScenes:[], sceneDirections: [], masterVoiceoverScript: '', voiceoverTranscription: null, t2vPromptProfile:'omni-flash', visualPrompts: [], demoState: 'idle', demoScenes: [], demoSceneNumbers: [] } as AppState;
 const plan={number:1,chapter_id:'CH01',beat_id:'B01',visual_family:'ASSEMBLY_PROCESS',story_function:'EXPLAIN_PROCESS',visual_treatment:'LIVE_ACTION_T2V',product_visibility:'PARTIAL',stage_id:'S01',environment_ref:'E01',state:'B',showdown_role:null,energy_level:'MEDIUM',camera_platform:null,graphic_spec:null} as const;
@@ -88,4 +88,18 @@ test('resets quota-driven schema 7 and 8 plans so they are rebuilt from the VO',
     assert.deepEqual(result.state?.visualPrompts,[]);
     assert.equal(result.state?.projectSchemaVersion,9);
   }
+});
+
+test('infers the Engine clip length from handoff duration bounds', () => {
+  const withPlan = (beats: number[], rhythm?: number) => ({ _production_handoff: { visual_story_plan: {
+    rhythm_policy: rhythm === undefined ? {} : { preferred_usable_scene_duration_seconds: { minimum: 3, preferred: 7, maximum: rhythm } },
+    chapters: [{ visual_beats: beats.map(value => ({ maximum_duration_seconds: value })) }],
+  } } }) as any;
+  assert.equal(inferClipLengthSeconds(withPlan([8, 8, 6], 8)), 8);
+  assert.equal(inferClipLengthSeconds(withPlan([10, 10], 10)), 10);
+  assert.equal(inferClipLengthSeconds(withPlan([8, 8], 10)), 8);
+  assert.equal(inferClipLengthSeconds(withPlan([], 8)), 8);
+  assert.equal(inferClipLengthSeconds(withPlan([])), null);
+  assert.equal(inferClipLengthSeconds({ topic: { title: 'Legacy' } } as any), null);
+  assert.equal(inferClipLengthSeconds(normalizeProductionHandoff(JSON.parse(JSON.stringify(template)))), 10);
 });

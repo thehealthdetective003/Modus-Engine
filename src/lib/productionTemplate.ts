@@ -144,3 +144,20 @@ export function normalizeProductionHandoff(input: any): TopicBrief {
 export function isProductionHandoff(data: any): boolean {
   return /^2\.\d+\.\d+$/.test(String(data?.schema?.version||'')) || (!!data?.schema?.name && Array.isArray(data?.production_stages) && !!data?.product);
 }
+
+/**
+ * Reads the clip length the Engine encoded into the handoff duration bounds.
+ * Per-beat maximum_duration_seconds values are authoritative; the rhythm-policy
+ * maximum is used only when no beat carries one. Returns null when the handoff
+ * carries no usable duration values.
+ */
+export function inferClipLengthSeconds(topic: TopicBrief | null | undefined): 8 | 10 | null {
+  const handoff: any = (topic as any)?._production_handoff;
+  const plan = handoff?.visual_story_plan;
+  const usable = (values: unknown[]) => values.map(Number).filter(value => Number.isFinite(value) && value > 0);
+  const beatValues = usable((Array.isArray(plan?.chapters) ? plan.chapters : []).flatMap((chapter: any) =>
+    (Array.isArray(chapter?.visual_beats) ? chapter.visual_beats : []).map((beat: any) => beat?.maximum_duration_seconds)));
+  const values = beatValues.length ? beatValues : usable([plan?.rhythm_policy?.preferred_usable_scene_duration_seconds?.maximum]);
+  if (!values.length) return null;
+  return Math.max(...values) <= 8 ? 8 : 10;
+}
