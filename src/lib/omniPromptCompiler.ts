@@ -1,16 +1,16 @@
 import { OmniPromptSections, SceneDirection, T2VPrompt, TopicBrief } from '../types';
 
-const cleanSpace = (value: unknown) => String(value ?? '').replace(/\[object Object\]/gi, '').replace(/\s+/g, ' ').trim();
-const strings = (value: unknown): string[] => Array.isArray(value) ? value.flatMap(strings) : typeof value === 'string' ? value.split(/\s*[|;]\s*/).map(cleanSpace).filter(Boolean) : [];
+export const cleanSpace = (value: unknown) => String(value ?? '').replace(/\[object Object\]/gi, '').replace(/\s+/g, ' ').trim();
+export const strings = (value: unknown): string[] => Array.isArray(value) ? value.flatMap(strings) : typeof value === 'string' ? value.split(/\s*[|;]\s*/).map(cleanSpace).filter(Boolean) : [];
 const commaStrings = (value:unknown):string[] => strings(value).flatMap(item=>item.split(/\s*,\s*/).map(cleanSpace).filter(Boolean));
-const key = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+export const key = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const normalizedCameraValue = (value: unknown) => cleanSpace(value).toLowerCase().replace(/[_/]+/g, ' ').replace(/\s+/g, ' ').trim();
 export const uniqueStrings = (values: unknown[]): string[] => {
   const seen = new Set<string>();
   return values.flatMap(strings).filter(value => { const normalized=key(value).replace(/^(no|avoid|exclude|without|do not show) /,''); if(!normalized||seen.has(normalized)) return false; seen.add(normalized); return true; });
 };
 
-const preferSpecific = (values: unknown[], limit = Number.POSITIVE_INFINITY): string[] => {
+export const preferSpecific = (values: unknown[], limit = Number.POSITIVE_INFINITY): string[] => {
   const unique=uniqueStrings(values);
   return unique.filter((value,index)=>{
     const normalized=key(value);
@@ -18,7 +18,7 @@ const preferSpecific = (values: unknown[], limit = Number.POSITIVE_INFINITY): st
   }).slice(0,limit);
 };
 
-const negativeTerm = (value: unknown): string => cleanSpace(value)
+export const negativeTerm = (value: unknown): string => cleanSpace(value)
   .replace(/^(?:exclude|avoid|without)\s+/i,'')
   .replace(/^no\s+/i,'')
   .replace(/^do not\s+(?:show|include|use)\s+/i,'')
@@ -28,7 +28,7 @@ const negativeTerm = (value: unknown): string => cleanSpace(value)
   .replace(/^do not\s+add\s+/i,'added ')
   .trim();
 
-const sentence = (value: unknown): string => {
+export const sentence = (value: unknown): string => {
   let text=cleanSpace(value).replace(/\s+([,.;:!?])/g,'$1').replace(/([,.;:!?])\1+/g,'$1').replace(/\s*[,;:]\s*$/,'').trim();
   text=text.replace(/\b(?:and|or|of|for|on|the|with|to|from|while|but|a|an)\s*[.!?]?$/i,'').trim();
   if(!text) return '';
@@ -43,9 +43,9 @@ const movementMap: Array<[RegExp,string]> = [
   [/\b(?:lock(?:ed)?|static|stationary|tripod)\b/i,'locked camera'],[/\bpan\b/i,'slow pan'],[/\b(?:push|move)\s*-?in\b/i,'slow push-in'],[/\b(?:pull|move)\s*-?back\b/i,'slow pull-back'],[/\b(?:crane|rise|aerial)\b/i,'restrained crane rise'],[/\blateral\s+dolly\b/i,'slow lateral dolly'],[/\blateral\s+(?:track|tracking)\b/i,'slow lateral tracking movement'],[/\bdolly\b/i,'slow dolly'],[/\btrack(?:ing)?\b|\bfollow(?:ing)?\b/i,'restrained tracking movement'],
 ];
 const mapped = (value:string,map:Array<[RegExp,string]>) => map.find(([pattern])=>pattern.test(value))?.[1];
-const naturalList=(items:string[])=>items.length<2?(items[0]||''):items.length===2?`${items[0]} and ${items[1]}`:`${items.slice(0,-1).join(', ')}, and ${items.at(-1)}`;
+export const naturalList=(items:string[])=>items.length<2?(items[0]||''):items.length===2?`${items[0]} and ${items[1]}`:`${items.slice(0,-1).join(', ')}, and ${items.at(-1)}`;
 const viewPattern = (viewpoint:string) => viewpoint.includes('rear')?/(tail|fin|stabil|engine|rotodome|hook|rear)/i:viewpoint.includes('front')?/(forward|nose|wing|engine|nacelle|rotodome|gear|front)/i:viewpoint.includes('side')?/(proportion|wing|engine|rotodome|gear|fuselage|side)/i:viewpoint.includes('interior')?/(interior|cockpit|cabin|bay|rack|panel|interface)/i:viewpoint.includes('overhead')?/(planform|wing|span|roof|top|rotodome|layout)/i:null;
-const rankedUnique=(items:Array<{value:unknown;score:number}>,limit:number)=>{
+export const rankedUnique=(items:Array<{value:unknown;score:number}>,limit:number)=>{
   const best=new Map<string,{value:string;score:number;order:number}>();let order=0;
   items.forEach(item=>strings(item.value).forEach(value=>{const normalized=key(value);const score=item.score+(/\b(?:exactly|one|two|three|four|five|six|seven|eight|nine|ten|\d+)\b/i.test(value)?25:0);const current=best.get(normalized);if(!current||score>current.score)best.set(normalized,{value,score,order:order++});}));
   return [...best.values()].sort((a,b)=>b.score-a.score||a.order-b.order).slice(0,limit).map(item=>item.value);
@@ -132,7 +132,7 @@ export function resolveProductionScene(topic: TopicBrief | null, direction: Scen
   };
 }
 
-const productName=(topic:TopicBrief|null):string=>{
+export const productName=(topic:TopicBrief|null):string=>{
   const product=(topic as any)?._production_handoff?.product;
   const official=cleanSpace(product?.official_name);
   const variant=cleanSpace(product?.exact_variant);
@@ -158,12 +158,12 @@ export function canonicalIdentitySignature(topic:TopicBrief|null):string {
   return sentence(anchors.length?`Preserve the same exact ${name} design in every clip: ${naturalList(anchors)}`:`Preserve the same exact ${name} design and proportions in every clip`);
 }
 
-function viewpointIdentitySentence(resolved:ResolvedProductionScene):string {
+export function viewpointIdentitySentence(resolved:ResolvedProductionScene):string {
   const anchors=preferSpecific(resolved.identity,4);
   return anchors.length?sentence(`From this ${resolved.camera.viewpoint} viewpoint, keep ${naturalList(anchors)} clearly visible`):'';
 }
 
-function stateSentence(direction:SceneDirection,resolved:ResolvedProductionScene,topic:TopicBrief|null):string {
+export function stateSentence(direction:SceneDirection,resolved:ResolvedProductionScene,topic:TopicBrief|null):string {
   const presentItems=preferSpecific(resolved.present,5),absentItems=preferSpecific(resolved.absent,5),exposedItems=preferSpecific(resolved.exposed,4);
   const present=presentItems.length?`show ${naturalList(presentItems)}`:`show ${direction.product_visual_state}`;
   const absent=absentItems.length?` Do not show ${naturalList(absentItems)}`:'';
@@ -171,7 +171,7 @@ function stateSentence(direction:SceneDirection,resolved:ResolvedProductionScene
   return sentence(`Keep the underlying ${productName(topic)} proportions stable. Show only the incomplete State ${direction.state} configuration: ${present}.${exposed}.${absent}`.replace(/\.\s*\./g,'. '));
 }
 
-const showdownPurpose=(direction:SceneDirection):string=>{
+export const showdownPurpose=(direction:SceneDirection):string=>{
   switch(direction.showdown_role){
     case 'ANTICIPATION':return 'Begin in controlled stillness and reveal operational scale without premature spectacle';
     case 'GROUND_REVEAL':return 'Establish the aircraft as a real operational machine at rest with clear scale';
@@ -189,7 +189,7 @@ const showdownPurpose=(direction:SceneDirection):string=>{
   }
 };
 
-const graphicCompositionPhrase=(value:string):string=>({
+export const graphicCompositionPhrase=(value:string):string=>({
   SINGLE_SUBJECT:'one dominant simplified subject with generous negative space',
   ORTHOGRAPHIC_CUTAWAY:'a clear orthographic cutaway with exposed layers kept visually separate',
   LEFT_TO_RIGHT_FLOW:'a clean left-to-right process composition',
@@ -200,7 +200,7 @@ const graphicCompositionPhrase=(value:string):string=>({
   SYMBOLIC_ROUTE:'a symbolic route through broad geometric terrain without cartographic detail',
   MATCHED_SHAPE_TRANSITION:'one centered geometric form held as a stable transition anchor',
 } as Record<string,string>)[value]||'one clear technical composition';
-const graphicMotionPhrase=(value:string):string=>({
+export const graphicMotionPhrase=(value:string):string=>({
   MINIMAL_PARALLAX:'Use only minimal parallax and a restrained light pass',
   HIGHLIGHT_PULSE:'Pulse one clean highlight once around the relevant feature',
   FLOW_DRAW_ON:'Draw one directional flow progressively through the composition',
@@ -211,7 +211,7 @@ const graphicMotionPhrase=(value:string):string=>({
   CONTROLLED_ASSEMBLY:'Move one tool or component through one controlled assembly interaction',
   MATCH_ANCHOR:'Move gently toward the centered transition shape without morphing it',
 } as Record<string,string>)[value]||'Keep all geometry stable';
-const graphicAnnotationPhrase=(values:string[]):string=>values.map(value=>({
+export const graphicAnnotationPhrase=(values:string[]):string=>values.map(value=>({
   DIRECTIONAL_ARROWS:'simple directional arrows',FLOW_LINES:'clean flow lines',HIGHLIGHT_RING:'one highlight ring',
   COLORED_ZONE:'one colored emphasis zone',SIGNAL_WAVES:'simple signal waves',MEASUREMENT_BASELINE:'an unlabeled measurement baseline',
 } as Record<string,string>)[value]||'').filter(Boolean).join(' and ');

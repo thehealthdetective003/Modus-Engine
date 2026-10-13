@@ -55,13 +55,16 @@ export function migrateProject(raw: any, initial: AppState, sceneDuration: 8 | 1
     return plan ? {...item,chapter_id:plan.chapter_id,beat_id:plan.beat_id,visual_family:plan.visual_family,story_function:plan.story_function,visual_treatment:plan.visual_treatment,product_visibility:plan.product_visibility,showdown_role:plan.showdown_role,energy_level:plan.energy_level,camera_platform:plan.camera_platform,graphic_spec:plan.graphic_spec,stage_id:plan.stage_id,environment_ref:plan.environment_ref,state:plan.state,required_visible_features:ensureRequiredVisibleFeatures(item,plan)} : item;
   }) : rawDirections;
   const directionsValid = planValid && !!transcription && validateSceneDirections(repairedDirections, transcription.scenes, rawPlan).length === 0;
+  // Legacy pre-timestamp image mode is incompatible; the current image-to-video mode is phase3Mode.
   const imageMode = raw.phase4Mode === 'image-animation';
+  const phase3Mode = raw.phase3Mode === 'image-to-video' ? 'image-to-video' as const : 'text-to-video' as const;
   const profileSupported = raw.projectSchemaVersion >= 4 && (raw.t2vPromptProfile === 'omni-flash' || raw.t2vPromptProfile === 'veo-flow');
   const rawPrompts = Array.isArray(raw.visualPrompts) ? raw.visualPrompts : [];
   const promptNumbers = new Set<number>();
   const promptsCompatible = directionsValid && rawPrompts.every((item:any) => {
     const number = Number(item?.number);
-    const valid = Number.isInteger(number) && number >= 1 && number <= transcription.scenes.length && !promptNumbers.has(number) && typeof item?.video_prompt === 'string' && item.video_prompt.trim();
+    const i2vValid = phase3Mode !== 'image-to-video' || (typeof item?.image_prompt === 'string' && item.image_prompt.trim() && typeof item?.animation_prompt === 'string' && item.animation_prompt.trim());
+    const valid = Number.isInteger(number) && number >= 1 && number <= transcription.scenes.length && !promptNumbers.has(number) && typeof item?.video_prompt === 'string' && item.video_prompt.trim() && i2vValid;
     if (valid) promptNumbers.add(number);
     return Boolean(valid);
   });
@@ -74,6 +77,7 @@ export function migrateProject(raw: any, initial: AppState, sceneDuration: 8 | 1
         action_description: String(item.action_description || ''), video_prompt: String(item.video_prompt || ''),
         voiceover: transcription.scenes[number - 1]?.text || '', stock_keywords: String(item.stock_keywords || ''),
         omniSections:item.omniSections,
+        ...(phase3Mode==='image-to-video'?{image_prompt:String(item.image_prompt),animation_prompt:String(item.animation_prompt),i2vSections:item.i2vSections}:{}),
       };
       return base;
     })
@@ -94,6 +98,7 @@ export function migrateProject(raw: any, initial: AppState, sceneDuration: 8 | 1
     visualPrompts: preserveOutput ? compatiblePrompts.sort((a,b)=>a.number-b.number) : [],
     demoState: 'idle', demoScenes: [], demoSceneNumbers: [],
     t2vPromptProfile: profileSupported ? raw.t2vPromptProfile : 'omni-flash',
+    phase3Mode,
     projectSchemaVersion: 9,
   };
   const reset = timingChanged || imageMode || !profileSupported || !directionsValid || !preserveOutput;

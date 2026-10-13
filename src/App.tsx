@@ -28,7 +28,7 @@ import { migrateProject, projectSceneDuration } from './lib/projectMigration';
 const PHASES = [
   { id: 1, label: 'TOPIC', description: 'Select Manufacturing Subject' },
   { id: 2, label: 'VO & DIRECTION', description: 'Import Timestamps and Direct Scenes' },
-  { id: 3, label: 'T2V PROMPTS', description: 'Generate Timestamped Video Prompts' },
+  { id: 3, label: 'VIDEO PROMPTS', description: 'Generate T2V or Image-to-Video Prompts' },
 ];
 export const INITIAL_STATE: AppState = {
   projectSchemaVersion: 9,
@@ -42,6 +42,7 @@ export const INITIAL_STATE: AppState = {
   masterVoiceoverScript: '',
   voiceoverTranscription: null,
   t2vPromptProfile: 'omni-flash',
+  phase3Mode: 'text-to-video',
   visualPrompts: [],
   demoState: 'idle',
   demoScenes: [],

@@ -4,6 +4,21 @@ export type { ProductVisibility, StoryFunction, VisualFamily } from './types/vis
 export type PhaseType = 1 | 2 | 3;
 export type ProjectFormatId = 'standard-lifecycle';
 export type T2VPromptProfile = 'omni-flash' | 'veo-flow';
+export type Phase3Mode = 'text-to-video' | 'image-to-video';
+export type MotionArchetype =
+  | 'AIRBORNE_FLIGHT'
+  | 'AIRBORNE_DEPARTURE'
+  | 'COCKPIT_IMMERSION'
+  | 'GROUND_MOVEMENT'
+  | 'STATIC_PRODUCT_REVEAL'
+  | 'ASSEMBLY_INTERACTION'
+  | 'MACHINERY_CYCLE'
+  | 'MATERIAL_FLOW'
+  | 'MACRO_DETAIL'
+  | 'INSPECTION_AND_TEST'
+  | 'ESTABLISHING_ENVIRONMENT'
+  | 'STATIC_GRAPHIC'
+  | 'MOTION_GRAPHIC';
 export interface Settings {
   apiKey: string;
   model: string;
@@ -24,6 +39,29 @@ export interface OmniPromptSections {
   sound: string;
   exclusions: string;
 }
+/** Opening-frame description for an image model. Must describe one frozen, sharp instant. */
+export interface I2VImageSections {
+  composition: string;
+  subject: string;
+  frozen_moment: string;
+  environment: string;
+  lighting_and_materials: string;
+  product_identity: string;
+  rendering: string;
+  exclusions: string;
+}
+/** Motion-only description that animates the opening frame. Must not re-describe appearance. */
+export interface I2VAnimationSections {
+  primary_motion: string;
+  secondary_motion: string;
+  environment_motion: string;
+  camera_motion: string;
+  timeline: string;
+  stability: string;
+  sound: string;
+  exclusions: string;
+}
+export interface I2VPromptSections { archetype: MotionArchetype; image: I2VImageSections; animation: I2VAnimationSections; }
 export interface TopicBrief {
   schema_version?: string;
   topic: { 
@@ -292,6 +330,11 @@ export interface T2VPrompt {
   voiceover: string;
   stock_keywords: string;
   omniSections?: OmniPromptSections;
+  /** Image-to-video mode only: the still opening-frame prompt. */
+  image_prompt?: string;
+  /** Image-to-video mode only: the motion prompt that animates image_prompt. Mirrored into video_prompt. */
+  animation_prompt?: string;
+  i2vSections?: I2VPromptSections;
 }
 export interface AppState {
   projectSchemaVersion: number;
@@ -305,6 +348,7 @@ export interface AppState {
   masterVoiceoverScript: string;
   voiceoverTranscription: VoiceoverTranscription | null;
   t2vPromptProfile: T2VPromptProfile;
+  phase3Mode: Phase3Mode;
   visualPrompts: T2VPrompt[];
   demoState: 'idle' | 'generating' | 'review' | 'approved';
   demoScenes: T2VPrompt[];
